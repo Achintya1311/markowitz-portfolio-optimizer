@@ -2,7 +2,7 @@
 
 Mean-variance optimization over an NSE universe, with the fragility of the inputs treated as the main finding rather than a footnote.
 
-**Status:** Not started · Next: Day 1 - returns and covariance estimation with estimation-error note
+**Status:** Last checkpoint 2026-09-22 · Next: markowitz-portfolio-optimizer Day 2 - efficient frontier via scipy.optimize (minimum variance for a target return, long-only and long/short variants)
 
 ## What this is
 
@@ -82,6 +82,7 @@ papering over that swing, not resolving it.
 <!-- CHECKPOINTS:START -->
 | Date | Commit | What changed | Next |
 |------|--------|--------------|------|
+| 2026-09-22 | `205df86` | Day 1: annualized mean/covariance estimation (optimizer.returns, optimizer.covariance) plus an estimation-error report CLI (optimizer.stats) against the shared 3-ticker Stock Stalker OHLCV fixtures (RELIANCE/TATACHEM/CROMPTON). Reused STOCKSTALKER's committed fixtures rather than synthetic ones, so a future v0.4 contract can match a real ticker. Findings are genuinely unflattering: all three annualized mean-return estimates have |t| < 2 (none distinguishable from zero at this sample size), and a first-half/second-half split shows the covariance matrix moving 19% (relative Frobenius norm) and TATACHEM.NS's mean swinging 25pp between windows -- recorded in the README as the reason later days' frontier weights should not be read as precise. Verified honestly: 25/25 new tests pass, and optimizer.stats was run by hand against the fixtures (no live network here, fixture path is the default). Also fixed this repo's and the hub's local main branches stuck in stale detached HEAD (the same recurring issue every prior integration day has hit) before committing. | markowitz-portfolio-optimizer Day 2 - efficient frontier via scipy.optimize (minimum variance for a target return, long-only and long/short variants) |
 <!-- CHECKPOINTS:END -->
 
 ## Limitations and what would make me wrong
