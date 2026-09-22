@@ -2,7 +2,7 @@
 
 Mean-variance optimization over an NSE universe, with the fragility of the inputs treated as the main finding rather than a footnote.
 
-**Status:** Last checkpoint 2026-09-22 · Next: markowitz-portfolio-optimizer Day 2 - efficient frontier via scipy.optimize (minimum variance for a target return, long-only and long/short variants)
+**Status:** Last checkpoint 2026-09-22 · Next: markowitz-portfolio-optimizer Day 3 - maximum-Sharpe tangency portfolio and the capital market line
 
 ## What this is
 
@@ -32,7 +32,7 @@ python -m optimizer.stats --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS
 python -m optimizer.frontier --tickers TICKER1.NS,TICKER2.NS --target-return 0.12
 ```
 
-`optimizer.stats` (Day 1) is the returns/covariance diagnostic below; `optimizer.frontier` is the Day 2+ optimizer.
+`optimizer.stats` (Day 1) is the returns/covariance diagnostic below; `optimizer.frontier` (Day 2) solves the minimum-variance portfolio for one target return, long-only and long/short.
 
 Runs offline against committed fixtures by default. Live data needs a key in `.env` (see `.env.example`); the fixture path is the default so nothing blocks on network access.
 
@@ -77,6 +77,42 @@ swung by -25.2 percentage points between the two windows - a bigger move
 than the full-sample point estimate itself. A single full-window mean is
 papering over that swing, not resolving it.
 
+**Day 2 - minimum-variance portfolio for a target return, long-only and
+long/short (`optimizer.frontier`).** Solves, for a fixed target annualized
+return, the weights minimizing portfolio variance subject to
+`sum(w) == 1` and `w @ mu == target`, via `scipy.optimize.minimize`
+(SLSQP) - once with `w >= 0` and once unconstrained.
+
+The honest headline finding is immediate, before any optimization: **all
+three of this universe's Day 1 sample means are negative**
+(RELIANCE.NS -6.42%, TATACHEM.NS -26.27%, CROMPTON.NS -34.07%). A
+long-only portfolio's return is a convex combination of its constituents'
+means, so the entire long-only-feasible target-return range is
+`[-34.07%, -6.42%]` - **no long-only portfolio built from this 3-ticker
+universe can target a positive expected return**, however the weights are
+chosen. Asking for one (e.g. `--target-return 0.10`) correctly comes back
+infeasible; only the long/short variant can reach it, and only by
+shorting RELIANCE.NS - +162.9%/RELIANCE.NS, -12.5%/TATACHEM.NS,
+-50.4%/CROMPTON.NS - which trades the return for leverage and short risk
+this universe's fixtures cannot back-test the funding cost of.
+
+For a target inside the feasible range (-15.00%), long-only and
+long/short agree on the same interior solution
+(RELIANCE.NS +63.59%, TATACHEM.NS +19.09%, CROMPTON.NS +17.32%, vol
+17.93%) - the non-negativity bound isn't binding there, so both variants
+find the same unconstrained minimum.
+
+Both "done when" checks from `NEXT_STEPS.md` are covered by tests, not
+just asserted: `tests/test_frontier.py` checks that for exactly 2 assets
+the numerical minimizer's weights match the closed-form solution (with 2
+assets and 2 equality constraints - budget and target return - the
+weights are pinned down algebraically, independent of the covariance
+matrix), on both a synthetic pair and a real fixture pair
+(RELIANCE.NS/TATACHEM.NS); and that a 15-point sweep of variance against
+target return has non-negative second differences (convex), both on the
+real 3-ticker fixture and as an explicit negative check that a concave
+sequence is correctly rejected.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -91,6 +127,8 @@ papering over that swing, not resolving it.
 - Covariance estimated from a trailing window assumes a stability that does not survive regime changes. Day 1's split-half check found the covariance matrix moved 19% (relative Frobenius norm) and TATACHEM.NS's mean swung 25 points between the first and second half of the same 501-day window - the window itself is not obviously one regime.
 - Only 3 tickers so far (the shared Stock Stalker universe). A 3-asset covariance matrix's condition number (3.2) says little about how the estimator will behave once the universe grows to the ~10-20 names later days will need.
 - Out-of-sample, equal-weight is a hard benchmark to beat. Where it wins, the README says so.
+- Day 2's frontier ranks portfolios by the same sample mean vector Day 1 showed has |t| < 2 on every ticker. Concretely: all three means are negative, so every long-only frontier point here targets a *loss*, and a positive-return target is only reachable long/short, by shorting the least-negative name and going long the more-negative ones - an artifact of noisy point estimates as much as a real edge, not a strategy this repo is recommending.
+- The long/short variant has no leverage or position-size limit yet (Day 5 adds constraints), so its weights for extreme target returns (e.g. +10%) imply >250% gross exposure - directionally correct for what unconstrained mean-variance does, but not a portfolio anyone should actually hold.
 
 ## Where this sits
 
