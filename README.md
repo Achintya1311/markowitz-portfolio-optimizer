@@ -28,14 +28,54 @@ Every source is free. Nothing in this project requires a paid tier, a subscripti
 ```bash
 uv venv && source .venv/bin/activate
 uv pip install -r requirements.txt
+python -m optimizer.stats --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS
 python -m optimizer.frontier --tickers TICKER1.NS,TICKER2.NS --target-return 0.12
 ```
+
+`optimizer.stats` (Day 1) is the returns/covariance diagnostic below; `optimizer.frontier` is the Day 2+ optimizer.
 
 Runs offline against committed fixtures by default. Live data needs a key in `.env` (see `.env.example`); the fixture path is the default so nothing blocks on network access.
 
 ## Findings
 
-Nothing yet. This section fills in as the work lands, including the results that do not flatter the method.
+**Day 1 - returns and covariance, and how noisy each one is.** Fixtures: the
+same 501-day daily-close series (2024-09-04 .. 2026-09-04) for RELIANCE.NS,
+TATACHEM.NS and CROMPTON.NS already committed by `STOCKSTALKER` and
+`fama-french-factor-model`, so a real cross-repo match is possible once the
+optimizer ships a contract, not just a synthetic one.
+
+Annualized sample mean, volatility, and the standard error of that mean
+estimate (`optimizer.stats`):
+
+| Ticker | Mean (ann.) | Vol (ann.) | SE(mean) | t-stat |
+|---|---|---|---|---|
+| RELIANCE.NS | -6.42% | 20.75% | 14.73% | -0.44 |
+| TATACHEM.NS | -26.27% | 28.71% | 20.38% | -1.29 |
+| CROMPTON.NS | -34.07% | 28.48% | 20.22% | -1.69 |
+
+Every one of those t-stats is below 2 in magnitude. None of the three mean
+estimates is statistically distinguishable from zero at this sample size -
+this is the textbook problem with plugging sample means into Markowitz
+(Ch.12.9's risk-adjusted-return framing assumes a usable expected-return
+input; two years of daily data is not enough to produce one for single
+names). The optimizer built in Days 2-4 will still rank these assets against
+each other by their point estimates, because that is what mean-variance does
+- but the ranking is standing on numbers this noisy, and the frontier
+chapters say so rather than presenting the weights as precise.
+
+Covariance is comparatively well behaved: pairwise correlations sit around
+0.28-0.29 (all three are momentum-screened NSE names from the same Stock
+Stalker universe, so some co-movement is expected) and the covariance
+matrix's condition number is 3.2 - not ill-conditioned yet with only 3
+assets, though this is exactly the number Day 4's Ledoit-Wolf comparison
+will watch as the universe grows.
+
+A split-half check (first 250 days vs last 250) makes the mean's instability
+concrete instead of asserting it: the covariance matrix moved 19.1%
+(relative Frobenius norm) between halves, and TATACHEM.NS's annualized mean
+swung by -25.2 percentage points between the two windows - a bigger move
+than the full-sample point estimate itself. A single full-window mean is
+papering over that swing, not resolving it.
 
 ## Checkpoint log
 
@@ -46,8 +86,9 @@ Nothing yet. This section fills in as the work lands, including the results that
 
 ## Limitations and what would make me wrong
 
-- Mean-variance is famously sensitive to expected returns, which are estimated with large error. Small input changes move weights a lot.
-- Covariance estimated from a trailing window assumes a stability that does not survive regime changes.
+- Mean-variance is famously sensitive to expected returns, which are estimated with large error. Small input changes move weights a lot. Day 1 measured this directly: all three tickers' annualized mean estimates have |t| < 2, i.e. none is statistically distinguishable from zero over this sample.
+- Covariance estimated from a trailing window assumes a stability that does not survive regime changes. Day 1's split-half check found the covariance matrix moved 19% (relative Frobenius norm) and TATACHEM.NS's mean swung 25 points between the first and second half of the same 501-day window - the window itself is not obviously one regime.
+- Only 3 tickers so far (the shared Stock Stalker universe). A 3-asset covariance matrix's condition number (3.2) says little about how the estimator will behave once the universe grows to the ~10-20 names later days will need.
 - Out-of-sample, equal-weight is a hard benchmark to beat. Where it wins, the README says so.
 
 ## Where this sits
