@@ -30,9 +30,10 @@ uv venv && source .venv/bin/activate
 uv pip install -r requirements.txt
 python -m optimizer.stats --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS
 python -m optimizer.frontier --tickers TICKER1.NS,TICKER2.NS --target-return 0.12
+python -m optimizer.tangency --tickers TICKER1.NS,TICKER2.NS --risk-free-rate 0.065
 ```
 
-`optimizer.stats` (Day 1) is the returns/covariance diagnostic below; `optimizer.frontier` (Day 2) solves the minimum-variance portfolio for one target return, long-only and long/short.
+`optimizer.stats` (Day 1) is the returns/covariance diagnostic below; `optimizer.frontier` (Day 2) solves the minimum-variance portfolio for one target return, long-only and long/short; `optimizer.tangency` (Day 3) solves the maximum-Sharpe tangency portfolio and reports the capital market line. `--risk-free-rate` defaults to `0.0` - there is no committed risk-free-rate fixture and no live FRED/RBI fetch available offline, so pass a real annualized rate explicitly if you have one.
 
 Runs offline against committed fixtures by default. Live data needs a key in `.env` (see `.env.example`); the fixture path is the default so nothing blocks on network access.
 
@@ -113,6 +114,55 @@ target return has non-negative second differences (convex), both on the
 real 3-ticker fixture and as an explicit negative check that a concave
 sequence is correctly rejected.
 
+**Day 3 - maximum-Sharpe tangency portfolio and the capital market line
+(`optimizer.tangency`).** Given a risk-free rate, the tangency portfolio
+maximizes `(w @ mu - rf) / sqrt(w @ cov @ w)`. Unconstrained (any sign,
+full investment) it has the standard closed form `w = inv(cov)(mu - rf) /
+sum(inv(cov)(mu - rf))`; long-only (`w >= 0`) it is solved numerically
+with `scipy.optimize` (SLSQP), same pattern as Day 2's frontier.
+
+**A real bug the closed form hides if you don't check it:** the textbook
+formula only maximizes Sharpe when `sum(inv(cov)(mu - rf)) > 0`. This
+repo's universe has every asset's annualized sample mean negative (Day
+1's finding), so at any risk-free rate near zero that sum is *negative*
+- dividing by it flips the sign of every weight, landing on the
+Sharpe-*minimizing* portfolio while looking exactly like a normal
+answer. The first version of `optimizer.tangency` written today did
+this silently (reported Sharpe -1.35, the theoretical minimum, dressed
+up as "the tangency portfolio"). It is now detected and reported as
+undefined instead: `max_sharpe_weights_unconstrained` returns
+`success=False` whenever `sum(inv(cov)(mu-rf)) <= 0`, and a numerical
+search (200 random SLSQP restarts against the real fixtures) confirms
+the underlying reason - the achievable Sharpe climbs toward the
+theoretical bound (`sqrt(excess' inv(cov) excess) = 1.3462` at rf=0)
+only as position sizes diverge into the millions, never converging. No
+finite full-investment portfolio attains it. This is recorded as a
+genuine finding, not a numerical footnote: with this universe, "the"
+unconstrained max-Sharpe portfolio does not exist.
+
+The long-only tangency portfolio is well-behaved by contrast (the
+long-only simplex is compact, so a maximum is always attained): at rf=0
+it is a corner solution, 100% RELIANCE.NS (the least-negative mean),
+Sharpe -0.3094. Still negative - every long-only portfolio from this
+universe underperforms holding cash on a risk-adjusted basis, which
+means the "capital market line" built from it is **downward-sloping**:
+expected return falls as more is allocated away from cash, all the way
+out through 100% tangency (-6.42% return at 20.75% vol) and beyond. A
+downward-sloping CML is not a chart error, it is what a negative-Sharpe
+tangency portfolio looks like - reported straight rather than dressed up
+as an efficient allocation line.
+
+`tests/test_tangency.py` checks the closed form against a direct
+numerical Sharpe-maximization (SLSQP, no closed form used) on a
+synthetic well-behaved (positive-excess-return) universe, checks it
+against the theoretical `sqrt(excess' inv(cov) excess)` bound, and has an
+explicit regression test that the degenerate branch never silently
+returns the minimizing portfolio - the exact bug found and fixed today.
+It also checks the long-only solver against the same numerical
+optimizer on the real fixtures, and checks the long-only Sharpe never
+exceeds the unconstrained theoretical bound (a subset of a feasible set
+can't beat the full set's optimum, on any input).
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -130,6 +180,8 @@ sequence is correctly rejected.
 - Out-of-sample, equal-weight is a hard benchmark to beat. Where it wins, the README says so.
 - Day 2's frontier ranks portfolios by the same sample mean vector Day 1 showed has |t| < 2 on every ticker. Concretely: all three means are negative, so every long-only frontier point here targets a *loss*, and a positive-return target is only reachable long/short, by shorting the least-negative name and going long the more-negative ones - an artifact of noisy point estimates as much as a real edge, not a strategy this repo is recommending.
 - The long/short variant has no leverage or position-size limit yet (Day 5 adds constraints), so its weights for extreme target returns (e.g. +10%) imply >250% gross exposure - directionally correct for what unconstrained mean-variance does, but not a portfolio anyone should actually hold.
+- Day 3's unconstrained tangency portfolio does not exist as a finite full-investment portfolio for this universe (every asset's sample mean is negative, so `sum(inv(cov)(mu-rf))` is negative at any realistic risk-free rate) - `optimizer.tangency` reports this as undefined rather than returning a number. The long-only tangency portfolio is well-defined but has negative Sharpe (-0.31 at rf=0), so the capital market line built from it is downward-sloping: this universe offers no long-only allocation that beats holding cash on a risk-adjusted basis.
+- The risk-free rate has no committed fixture and no live FRED/RBI fetch is available in this sandbox, so `optimizer.tangency` defaults `--risk-free-rate` to 0.0 rather than a fabricated "real" figure. Every Sharpe ratio and CML number above is only as meaningful as that assumption - pass a real rate via the flag if one is available.
 
 ## Where this sits
 
