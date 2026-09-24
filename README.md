@@ -32,7 +32,18 @@ python -m optimizer.stats --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS
 python -m optimizer.frontier --tickers TICKER1.NS,TICKER2.NS --target-return 0.12
 python -m optimizer.tangency --tickers TICKER1.NS,TICKER2.NS --risk-free-rate 0.065
 python -m optimizer.shrinkage --tickers TICKER1.NS,TICKER2.NS --risk-free-rate 0.065
+python -m optimizer.constraints --tickers TICKER1.NS,TICKER2.NS,TICKER3.NS --target-return -0.15 \
+    --max-position 0.6 --turnover-lambda 50 --prev-weights 0.2,0.3,0.5
 ```
+
+`optimizer.constraints` (Day 5) adds sector caps, a per-asset position limit,
+and a turnover penalty on top of Day 2's minimum-variance-for-a-target-return
+problem, and reports the constrained solution next to the unconstrained
+baseline so the effect of each constraint is visible. `--sector-cap
+Energy=0.5,...` caps sector exposure (default sector map: the shared
+3-ticker fixture universe's real NSE sectors); `--max-position` caps any
+single name; `--turnover-lambda` penalizes squared distance from
+`--prev-weights` (default: equal-weight).
 
 `optimizer.shrinkage` (Day 4) is the centrepiece: compares the plain sample
 covariance against a Ledoit-Wolf shrinkage estimate, and reports how far the
@@ -204,6 +215,64 @@ implementation doesn't work. The dramatic weight swings the hub's
 once the universe grows toward the ~10-20 names later projects target,
 where `n` gets materially closer to `T`.
 
+**Day 5 - sector caps, position limits, and a turnover penalty
+(`optimizer.constraints`).** Adds three constraints on top of Day 2's
+minimum-variance-for-a-target-return problem: a per-sector weight cap
+(inequality constraint), a per-asset position limit (a tighter bound than
+plain long-only `w >= 0`), and a turnover penalty - a quadratic
+`turnover_lambda * sum((w - w_prev) ** 2)` term added to the objective,
+discouraging drift from a reference portfolio. Every solve reports the
+constrained weights next to the unconstrained Day-2 baseline so the effect
+of each constraint is visible, not just asserted.
+
+Two honest findings, both surfaced by testing against the real fixtures
+rather than glossed over:
+
+1. **This 3-ticker universe can't demonstrate sector caps as a distinct
+   constraint from position limits.** RELIANCE.NS, TATACHEM.NS and
+   CROMPTON.NS sit in three different NSE sectors (Energy, Chemicals,
+   Consumer Durables - `DEFAULT_SECTOR_MAP`), so capping every sector at X
+   is mathematically identical to capping every position at X: at
+   `--target-return -0.15`, `--max-position 0.6` and an equal 60% cap on
+   all three sectors produce *the exact same weights*
+   (RELIANCE.NS 60.00%, TATACHEM.NS 31.82%, CROMPTON.NS 8.18%, both runs
+   binding only on RELIANCE.NS). Sector caps are genuinely exercised
+   instead on a synthetic 4-asset/2-sector universe in
+   `tests/test_constraints.py`, where a 40% sector cap forces two assets
+   in the stronger sector down from a combined 42.9% to exactly 40.0% while
+   redistributing into the other sector - a case this fixture universe
+   cannot produce on its own. The CLI prints this degeneracy as a note
+   whenever `--sector-cap` is used against the real 3-ticker universe
+   rather than presenting the (real but unexercising) result as more than
+   it is.
+
+2. **The turnover penalty does not monotonically reduce L1 turnover**, and
+   that surprised the implementation before it was checked against the
+   real fixtures. `turnover_lambda * sum((w - w_prev) ** 2)` is a
+   *quadratic* (L2) penalty, not the more standard L1 turnover cost
+   (`sum(|w - w_prev|)`) - L1 is non-differentiable at zero, which SLSQP is
+   not built for. Squared-L2 distance to the reference *is* provably
+   non-increasing as `turnover_lambda` grows (a standard parametric-QP
+   argument: summing the two optimality conditions for any lambda1 <
+   lambda2 gives `dist(w_lambda1) >= dist(w_lambda2)` directly), and
+   `tests/test_constraints.py` checks exactly that. But L1 distance is a
+   different metric with a differently-shaped unit ball, and is *not*
+   guaranteed to move the same way - concretely, at
+   `--target-return -0.2226` (this universe's mean target) with reference
+   weights `[20%, 30%, 50%]`, turning the penalty on (`--turnover-lambda
+   50`) moves the solution from 29.50% L1 turnover at lambda=0 to **30.72%**
+   at lambda=50 - slightly *farther* from the reference, not closer, even
+   though the L2 distance did shrink as guaranteed. The CLI reports both
+   the baseline's and the constrained solution's L1 turnover so this is
+   visible rather than hidden behind a metric that always looks good.
+
+Verified: 113/113 tests pass (28 new), including the synthetic sector-cap
+and position-limit binding cases, the two guaranteed monotonicity
+properties above, and validation errors (mismatched `--prev-weights`
+length, unknown sector in `--sector-cap`, non-positive `--max-position`).
+The CLI was run by hand with no constraints, with a binding position limit,
+with a binding sector cap, and with the turnover penalty on and off.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -222,7 +291,9 @@ where `n` gets materially closer to `T`.
 - Only 3 tickers so far (the shared Stock Stalker universe). A 3-asset covariance matrix's condition number (3.2) says little about how the estimator will behave once the universe grows to the ~10-20 names later days will need.
 - Out-of-sample, equal-weight is a hard benchmark to beat. Where it wins, the README says so.
 - Day 2's frontier ranks portfolios by the same sample mean vector Day 1 showed has |t| < 2 on every ticker. Concretely: all three means are negative, so every long-only frontier point here targets a *loss*, and a positive-return target is only reachable long/short, by shorting the least-negative name and going long the more-negative ones - an artifact of noisy point estimates as much as a real edge, not a strategy this repo is recommending.
-- The long/short variant has no leverage or position-size limit yet (Day 5 adds constraints), so its weights for extreme target returns (e.g. +10%) imply >250% gross exposure - directionally correct for what unconstrained mean-variance does, but not a portfolio anyone should actually hold.
+- The long/short variant (`optimizer.frontier`, `optimizer.constraints --long-short`) still has no *leverage* limit - `--max-position` caps each name's magnitude but says nothing about gross exposure, so a long/short target far from the feasible long-only range can still imply large aggregate short exposure across several names even with every individual position capped.
+- Day 5's sector caps are implemented and tested (a synthetic 4-asset/2-sector universe in `tests/test_constraints.py` shows one genuinely binding differently from a position limit), but on this repo's real 3-ticker universe every ticker is in its own sector, so a sector cap here is mathematically identical to a plain position limit - not a distinct constraint on this fixture set, and the CLI says so.
+- Day 5's turnover penalty is quadratic (L2), not the more standard L1 turnover cost, because L1 is non-differentiable at zero and SLSQP needs a smooth objective. Squared-L2 distance to the reference portfolio provably shrinks as the penalty coefficient grows; L1 distance - the number anyone actually managing turnover cares about - does not always move the same way. A concrete real-fixture case moves L1 turnover from 29.50% to 30.72% when the penalty is turned on, i.e. slightly worse by the metric that matters, while L2 distance improved as promised. Report L1, not the penalty value, as "the turnover number" if this module is ever used for real.
 - Day 3's unconstrained tangency portfolio does not exist as a finite full-investment portfolio for this universe (every asset's sample mean is negative, so `sum(inv(cov)(mu-rf))` is negative at any realistic risk-free rate) - `optimizer.tangency` reports this as undefined rather than returning a number. The long-only tangency portfolio is well-defined but has negative Sharpe (-0.31 at rf=0), so the capital market line built from it is downward-sloping: this universe offers no long-only allocation that beats holding cash on a risk-adjusted basis.
 - The risk-free rate has no committed fixture and no live FRED/RBI fetch is available in this sandbox, so `optimizer.tangency` defaults `--risk-free-rate` to 0.0 rather than a fabricated "real" figure. Every Sharpe ratio and CML number above is only as meaningful as that assumption - pass a real rate via the flag if one is available.
 - Day 4's shrinkage comparison is genuine but undramatic on this specific universe: with only 3 assets and 500 days of history (T >> n), the sample covariance was already well-conditioned, so shrinkage intensity (7.1%) and the resulting weight moves are small. That is the honest result for this fixture set, not a demonstration that shrinkage doesn't matter - the synthetic stress tests in `tests/test_shrinkage.py` show the same formula shrinking to >99% or falling toward 0% at the extremes the theory predicts. A wider universe (Day 5+ and later projects target ~10-20 names) is where this day's centrepiece finding would actually bite.
