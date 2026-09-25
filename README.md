@@ -38,6 +38,8 @@ python -m optimizer.oos --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS \
     --train-window 252 --test-window 21
 python -m optimizer.report --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS --risk-free-rate 0.065
 python -m optimizer.audit --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS
+python -m optimizer.sizing --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS --sector-cap 0.5 \
+    --contract outputs/sizing_contract_RELIANCE.json --contract-ticker RELIANCE.NS
 ```
 
 `optimizer.constraints` (Day 5) adds sector caps, a per-asset position limit,
@@ -58,6 +60,8 @@ global minimum-variance and long-only tangency weights move between the two.
 `optimizer.oos` (Day 6) walks a fixed-length training window forward through the fixture history, solving the long-only max-Sharpe/Ledoit-Wolf tangency portfolio on each window and holding it (no rebalancing) through the following test window, scored against equal-weight held the same way. `--train-window`/`--test-window` are in trading days (default 252/21, roughly one year training, one month holding).
 
 `optimizer.report` (Day 7) writes a long-only frontier chart (with the tangency point and capital market line) to `outputs/` and prints the min-variance and max-Sharpe weights as an aligned terminal table; pass `--no-chart` to skip the PNG. `optimizer.audit` (Day 7) is the `ml-pipeline-audit` pass: checks `optimizer.oos`'s walk-forward folds for boundary gaps/overlaps and for a fold's decision depending on data after its own test window, printing a summary and writing `outputs/audit_<date>.md`; exits non-zero if either check finds a violation.
+
+`optimizer.sizing` (integration day) is the v0.4 contract to the spine: the same Ledoit-Wolf shrunk covariance Day 4 built, fed into a long-only max-Sharpe tangency solve with Day 5's sector-cap constraint added on top, because the raw unconstrained tangency portfolio Days 3/4/6/7 already found (100% RELIANCE.NS) is not a position size any real book would take. `--sector-cap` (default 50%) is a uniform per-sector weight cap; `--contract`/`--contract-ticker` write the `{"sizing": {"weight", "method", "constraint_binding"}}` block STOCKSTALKER reads.
 
 Runs offline against committed fixtures by default. Live data needs a key in `.env` (see `.env.example`); the fixture path is the default so nothing blocks on network access.
 
@@ -366,6 +370,44 @@ the real fixtures: `optimizer.report` wrote a real PNG to `outputs/` and
 printed the weights table above; `optimizer.audit` printed and wrote a
 clean `outputs/audit_<date>.md` report, exit code 0.
 
+**Integration day - position sizing contract for the spine (`optimizer.sizing`,
+v0.4).** Day 3/4/6/7 all found the same thing: this 3-asset universe's raw
+long-only max-Sharpe tangency portfolio is a 100% RELIANCE.NS corner
+solution, not a position size a real book would take. This module combines
+Day 4's Ledoit-Wolf shrunk covariance (the method `NEXT_STEPS.md` committed
+to, `max_sharpe_ledoit_wolf`) with Day 5's sector-cap constraint - reusing
+both pieces verbatim, no new optimization theory - to solve the same
+max-Sharpe objective subject to a uniform per-sector weight cap (50% by
+default). On the real universe RELIANCE.NS's sector cap binds immediately
+(it wants 100%, gets capped at 50%), and the freed-up 50% goes entirely to
+TATACHEM.NS, not split across both remaining names - CROMPTON.NS gets 0%
+even under the cap. A second, less flattering finding: the capped
+portfolio's Sharpe ratio (-0.8251) is *worse* than the unconstrained one
+(-0.3034) - forcing diversification here does not improve risk-adjusted
+return, because both stand-in names' negative sample means (Day 1) make
+"more names" mean "more exposure to noise", not less. Reported straight,
+not smoothed into a diversification success story. The v0.4 contract this
+repo ships to STOCKSTALKER is `{"sizing": {"weight": 0.5, "method":
+"max_sharpe_ledoit_wolf", "constraint_binding": "Energy"}}` for RELIANCE.NS
+- a real match, since RELIANCE.NS is one of STOCKSTALKER's own three
+universe tickers, same as Day 4/6's monte-carlo-risk-lab and
+fama-french-factor-model integrations. Because every ticker in this fixture
+universe sits in its own sector (Day 5's finding, restated here), the
+sector cap is mathematically identical to a plain position limit on
+RELIANCE.NS alone - not exercised as a distinct multi-name constraint on
+this universe, same degeneracy Day 5 already reported, though
+`tests/test_sizing.py` covers a synthetic multi-sector universe where a
+sector cap genuinely redistributes weight differently from a position
+limit. Verified: 171/171 tests pass (16 new: the sector-capped solver
+against a synthetic multi-sector case, the real-universe degenerate case,
+and `to_contract()`'s shape/value/error paths), CLI run by hand at the
+default 50% cap and confirmed byte-for-byte deterministic across five runs
+(a real bug was caught and fixed here: building the per-sector cap dict
+from a plain `set()` of sector names made the CLI's own column order
+non-reproducible between runs, since Python randomizes string-hash-based
+set iteration order per process - fixed by building it from `dict.fromkeys`
+instead, which preserves insertion order).
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -396,6 +438,7 @@ clean `outputs/audit_<date>.md` report, exit code 0.
 - The risk-free rate has no committed fixture and no live FRED/RBI fetch is available in this sandbox, so `optimizer.tangency` defaults `--risk-free-rate` to 0.0 rather than a fabricated "real" figure. Every Sharpe ratio and CML number above is only as meaningful as that assumption - pass a real rate via the flag if one is available.
 - Day 4's shrinkage comparison is genuine but undramatic on this specific universe: with only 3 assets and 500 days of history (T >> n), the sample covariance was already well-conditioned, so shrinkage intensity (7.1%) and the resulting weight moves are small. That is the honest result for this fixture set, not a demonstration that shrinkage doesn't matter - the synthetic stress tests in `tests/test_shrinkage.py` show the same formula shrinking to >99% or falling toward 0% at the extremes the theory predicts. A wider universe (Day 5+ and later projects target ~10-20 names) is where this day's centrepiece finding would actually bite.
 - Day 7's `optimizer.audit` is scoped to `optimizer.oos` only - the one module in this repo with a time axis to leak across. It is not a general correctness audit of `frontier`/`tangency`/`shrinkage`/`constraints` (those are single-window static solves, checked instead by their own convexity/closed-form/monotonicity tests), and it says nothing about whether the walk-forward *result* is good, only that it is honestly out-of-sample. Day 7's frontier chart and weights table are a different view of numbers Days 2-3 already reported, not a new finding.
+- The v0.4 sizing contract's sector cap is, on this repo's real 3-ticker universe, mathematically identical to a plain position limit on RELIANCE.NS alone (every ticker sits in its own sector, the same degeneracy Day 5 already found) - it does not exercise sector caps as a genuine multi-name diversification constraint here, only in `tests/test_sizing.py`'s synthetic multi-sector case. And the sector-capped portfolio's Sharpe ratio (-0.83) is worse, not better, than the unconstrained corner solution's (-0.30): forcing weight into TATACHEM.NS to satisfy the cap adds exposure to a second noisy, negative-mean estimate rather than diversifying away risk. The `weight: 0.5` this repo ships to STOCKSTALKER is an honest output of that constrained optimization, not a claim that 50/50 RELIANCE/TATACHEM is a good portfolio.
 
 ## Where this sits
 
@@ -404,8 +447,9 @@ Part of a nine-repo research pipeline. Stock Stalker screens the NSE universe; t
 ```json
 {
   "sizing": {
-    "weight": 0.08,
-    "method": "max_sharpe_ledoit_wolf"
+    "weight": 0.5,
+    "method": "max_sharpe_ledoit_wolf",
+    "constraint_binding": "Energy"
   }
 }
 ```
