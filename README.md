@@ -34,6 +34,8 @@ python -m optimizer.tangency --tickers TICKER1.NS,TICKER2.NS --risk-free-rate 0.
 python -m optimizer.shrinkage --tickers TICKER1.NS,TICKER2.NS --risk-free-rate 0.065
 python -m optimizer.constraints --tickers TICKER1.NS,TICKER2.NS,TICKER3.NS --target-return -0.15 \
     --max-position 0.6 --turnover-lambda 50 --prev-weights 0.2,0.3,0.5
+python -m optimizer.oos --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS \
+    --train-window 252 --test-window 21
 ```
 
 `optimizer.constraints` (Day 5) adds sector caps, a per-asset position limit,
@@ -50,6 +52,8 @@ covariance against a Ledoit-Wolf shrinkage estimate, and reports how far the
 global minimum-variance and long-only tangency weights move between the two.
 
 `optimizer.stats` (Day 1) is the returns/covariance diagnostic below; `optimizer.frontier` (Day 2) solves the minimum-variance portfolio for one target return, long-only and long/short; `optimizer.tangency` (Day 3) solves the maximum-Sharpe tangency portfolio and reports the capital market line. `--risk-free-rate` defaults to `0.0` - there is no committed risk-free-rate fixture and no live FRED/RBI fetch available offline, so pass a real annualized rate explicitly if you have one.
+
+`optimizer.oos` (Day 6) walks a fixed-length training window forward through the fixture history, solving the long-only max-Sharpe/Ledoit-Wolf tangency portfolio on each window and holding it (no rebalancing) through the following test window, scored against equal-weight held the same way. `--train-window`/`--test-window` are in trading days (default 252/21, roughly one year training, one month holding).
 
 Runs offline against committed fixtures by default. Live data needs a key in `.env` (see `.env.example`); the fixture path is the default so nothing blocks on network access.
 
@@ -273,6 +277,51 @@ length, unknown sector in `--sector-cap`, non-positive `--max-position`).
 The CLI was run by hand with no constraints, with a binding position limit,
 with a binding sector cap, and with the turnover penalty on and off.
 
+**Day 6 - walk-forward out-of-sample test (`optimizer.oos`).** Every prior
+day reported how a portfolio looks on the same window it was estimated
+from - not a result, just curve-fitting, per `NEXT_STEPS.md`'s own "traps"
+section. This module walks a fixed 252-day (~1 year) training window
+forward through the fixture history in non-overlapping 21-day (~1 month)
+steps: solve the long-only max-Sharpe tangency portfolio on Ledoit-Wolf
+shrunk covariance (Day 4's centrepiece, and exactly the `max_sharpe_ledoit_wolf`
+method the v0.4 contract to the spine names) using only data up to the end
+of the training window, hold those weights fixed with no rebalancing
+through the following test window, and score the return the optimizer
+never saw when it picked the weights. Equal weight is held the same way
+over the same test windows as the benchmark.
+
+On the real 3-ticker universe this produces 11 non-overlapping folds
+(2025-09-10 through 2026-08-12, 17 trailing days unused). The honest
+result: **the optimizer edges out equal-weight, but not by a margin that
+means anything.** Compounded return over the 11 folds was -16.73%
+(optimizer) vs -17.33% (equal-weight); the optimizer won 6 of 11 folds
+(54.5%); mean per-fold excess return was +0.13% with a standard deviation
+of 5.69%, giving a t-stat of **+0.07** - nowhere close to distinguishable
+from zero at conventional confidence. This is the expected outcome given
+Day 1's finding that none of this universe's mean estimates clears |t| >
+2: a walk-forward test built on noisy inputs should not, and does not,
+show a reliable edge. A second, unglamorous finding: because this is a
+3-asset long-only tangency solve, almost every fold's optimizer weights
+are a 100% corner solution in a single name (RELIANCE.NS in 9 of 11
+folds) - "optimization" here mostly means picking the best-looking single
+name each period, not genuine diversification, a direct consequence of
+having only 3 assets to allocate across.
+
+**No NSE index/benchmark fixture is committed anywhere in this sandbox**
+(no network access, zero spend, and none was ever fetched for this
+pipeline) - `optimizer.oos` compares the optimizer against equal-weight
+only, not against the index `NEXT_STEPS.md` also asks for. The CLI prints
+this as a limitation on every run rather than silently dropping the index
+leg of the comparison; see the Limitations section below.
+
+Verified: 138/138 tests pass (25 new: fold-slicing edge cases, exact
+buy-and-hold return reconciliation against manual price-ratio math, the
+equal-weight fallback path for an infeasible tangency solve, and full
+aggregation checks against the real fixtures and a synthetic two-fold
+case). The CLI was run by hand at the default 252/21-day windows and
+again at 200/50-day windows to confirm the fold count and date ranges
+respond correctly to both.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -290,7 +339,9 @@ with a binding sector cap, and with the turnover penalty on and off.
 - Mean-variance is famously sensitive to expected returns, which are estimated with large error. Small input changes move weights a lot. Day 1 measured this directly: all three tickers' annualized mean estimates have |t| < 2, i.e. none is statistically distinguishable from zero over this sample.
 - Covariance estimated from a trailing window assumes a stability that does not survive regime changes. Day 1's split-half check found the covariance matrix moved 19% (relative Frobenius norm) and TATACHEM.NS's mean swung 25 points between the first and second half of the same 501-day window - the window itself is not obviously one regime.
 - Only 3 tickers so far (the shared Stock Stalker universe). A 3-asset covariance matrix's condition number (3.2) says little about how the estimator will behave once the universe grows to the ~10-20 names later days will need.
-- Out-of-sample, equal-weight is a hard benchmark to beat. Where it wins, the README says so.
+- Day 6's walk-forward test found the optimizer nominally beats equal-weight (-16.73% vs -17.33% compounded over 11 out-of-sample folds, 54.5% fold win rate) but the mean per-fold excess return's t-stat is +0.07 - not distinguishable from zero at any conventional confidence. Out-of-sample, equal-weight is a hard benchmark to beat, and this is not a case where the optimizer cleared that bar convincingly; the closeness of the two totals is itself consistent with Day 1's finding that this universe's mean estimates carry essentially no signal.
+- Day 6's optimizer is a 3-asset long-only max-Sharpe solve, which is a corner solution (100% in one name) in 9 of its 11 out-of-sample folds - "optimization" here is mostly picking the best-looking single name each period, not diversification, purely a consequence of having only 3 assets to choose from.
+- There is no NSE index/benchmark fixture committed anywhere in this sandbox (no network access here, and none was ever fetched for this pipeline), so Day 6's out-of-sample comparison is optimizer-vs-equal-weight only - it does not include the vs-index leg `NEXT_STEPS.md` asks for. `optimizer.oos` states this on every run rather than substituting a fabricated benchmark.
 - Day 2's frontier ranks portfolios by the same sample mean vector Day 1 showed has |t| < 2 on every ticker. Concretely: all three means are negative, so every long-only frontier point here targets a *loss*, and a positive-return target is only reachable long/short, by shorting the least-negative name and going long the more-negative ones - an artifact of noisy point estimates as much as a real edge, not a strategy this repo is recommending.
 - The long/short variant (`optimizer.frontier`, `optimizer.constraints --long-short`) still has no *leverage* limit - `--max-position` caps each name's magnitude but says nothing about gross exposure, so a long/short target far from the feasible long-only range can still imply large aggregate short exposure across several names even with every individual position capped.
 - Day 5's sector caps are implemented and tested (a synthetic 4-asset/2-sector universe in `tests/test_constraints.py` shows one genuinely binding differently from a position limit), but on this repo's real 3-ticker universe every ticker is in its own sector, so a sector cap here is mathematically identical to a plain position limit - not a distinct constraint on this fixture set, and the CLI says so.
