@@ -36,6 +36,8 @@ python -m optimizer.constraints --tickers TICKER1.NS,TICKER2.NS,TICKER3.NS --tar
     --max-position 0.6 --turnover-lambda 50 --prev-weights 0.2,0.3,0.5
 python -m optimizer.oos --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS \
     --train-window 252 --test-window 21
+python -m optimizer.report --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS --risk-free-rate 0.065
+python -m optimizer.audit --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS
 ```
 
 `optimizer.constraints` (Day 5) adds sector caps, a per-asset position limit,
@@ -54,6 +56,8 @@ global minimum-variance and long-only tangency weights move between the two.
 `optimizer.stats` (Day 1) is the returns/covariance diagnostic below; `optimizer.frontier` (Day 2) solves the minimum-variance portfolio for one target return, long-only and long/short; `optimizer.tangency` (Day 3) solves the maximum-Sharpe tangency portfolio and reports the capital market line. `--risk-free-rate` defaults to `0.0` - there is no committed risk-free-rate fixture and no live FRED/RBI fetch available offline, so pass a real annualized rate explicitly if you have one.
 
 `optimizer.oos` (Day 6) walks a fixed-length training window forward through the fixture history, solving the long-only max-Sharpe/Ledoit-Wolf tangency portfolio on each window and holding it (no rebalancing) through the following test window, scored against equal-weight held the same way. `--train-window`/`--test-window` are in trading days (default 252/21, roughly one year training, one month holding).
+
+`optimizer.report` (Day 7) writes a long-only frontier chart (with the tangency point and capital market line) to `outputs/` and prints the min-variance and max-Sharpe weights as an aligned terminal table; pass `--no-chart` to skip the PNG. `optimizer.audit` (Day 7) is the `ml-pipeline-audit` pass: checks `optimizer.oos`'s walk-forward folds for boundary gaps/overlaps and for a fold's decision depending on data after its own test window, printing a summary and writing `outputs/audit_<date>.md`; exits non-zero if either check finds a violation.
 
 Runs offline against committed fixtures by default. Live data needs a key in `.env` (see `.env.example`); the fixture path is the default so nothing blocks on network access.
 
@@ -322,6 +326,46 @@ case). The CLI was run by hand at the default 252/21-day windows and
 again at 200/50-day windows to confirm the fold count and date ranges
 respond correctly to both.
 
+**Day 7 - frontier chart, a weights table, and a pipeline audit
+(`optimizer.report`, `optimizer.audit`).** `optimizer.report` computes
+nothing new - it calls Day 2's `build_frontier` and Day 3's
+`max_sharpe_weights_long_only`/`capital_market_line` and lays the same
+numbers out as a one-page summary: a mean-vol chart (long-only frontier,
+individual assets, the tangency point, and the capital market line,
+written to `outputs/`) plus an aligned terminal table of the min-variance
+and max-Sharpe weights. On the real 3-ticker universe both portfolios are
+corner solutions again - the min-variance point is 56/21/22 across
+RELIANCE.NS/TATACHEM.NS/CROMPTON.NS, but the long-only tangency portfolio
+is 100% RELIANCE.NS, same single-name concentration Day 6's walk-forward
+folds already showed - a direct consequence of having only 3 assets to
+allocate across, not a new finding, just a second view of the same one.
+
+`optimizer.audit` is the `ml-pipeline-audit` pass, scoped to the one
+module in this repo with real look-ahead risk: `optimizer.oos`'s
+walk-forward test. Every other day's module (`frontier`, `tangency`,
+`shrinkage`, `constraints`) solves a single static window with no time
+axis to leak across, so there is nothing to audit there; the walk-forward
+test is the only place a silent bug could let a fold's decision see data
+it would not have had yet. Two mechanical checks, not by-inspection ones:
+(1) fold boundaries - every fold's train/test slice must abut exactly
+with no gap or overlap, and no two folds' test windows may overlap (the
+same day scored twice); (2) decision causality - a fold's chosen weights
+on the full fixture must be unchanged when every trading day after that
+fold's own test window is deleted. Both are true by construction today
+given how `run_fold` slices its input, but "by construction" is exactly
+the kind of claim a later refactor (an expanding window, a shared cache
+keyed by ticker) could quietly break without any existing test catching
+it - this checks the observable behaviour, not the code. On the real
+3-ticker/11-fold walk-forward run: **clean**, no boundary or causality
+violations. A negative-control test (`tests/test_audit.py`) confirms the
+causality check actually catches a leaking training window when one is
+injected, so a clean result here is not just "the check never fires."
+
+Verified: 155/155 tests pass (17 new). Both CLIs were run by hand against
+the real fixtures: `optimizer.report` wrote a real PNG to `outputs/` and
+printed the weights table above; `optimizer.audit` printed and wrote a
+clean `outputs/audit_<date>.md` report, exit code 0.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
@@ -350,6 +394,7 @@ respond correctly to both.
 - Day 3's unconstrained tangency portfolio does not exist as a finite full-investment portfolio for this universe (every asset's sample mean is negative, so `sum(inv(cov)(mu-rf))` is negative at any realistic risk-free rate) - `optimizer.tangency` reports this as undefined rather than returning a number. The long-only tangency portfolio is well-defined but has negative Sharpe (-0.31 at rf=0), so the capital market line built from it is downward-sloping: this universe offers no long-only allocation that beats holding cash on a risk-adjusted basis.
 - The risk-free rate has no committed fixture and no live FRED/RBI fetch is available in this sandbox, so `optimizer.tangency` defaults `--risk-free-rate` to 0.0 rather than a fabricated "real" figure. Every Sharpe ratio and CML number above is only as meaningful as that assumption - pass a real rate via the flag if one is available.
 - Day 4's shrinkage comparison is genuine but undramatic on this specific universe: with only 3 assets and 500 days of history (T >> n), the sample covariance was already well-conditioned, so shrinkage intensity (7.1%) and the resulting weight moves are small. That is the honest result for this fixture set, not a demonstration that shrinkage doesn't matter - the synthetic stress tests in `tests/test_shrinkage.py` show the same formula shrinking to >99% or falling toward 0% at the extremes the theory predicts. A wider universe (Day 5+ and later projects target ~10-20 names) is where this day's centrepiece finding would actually bite.
+- Day 7's `optimizer.audit` is scoped to `optimizer.oos` only - the one module in this repo with a time axis to leak across. It is not a general correctness audit of `frontier`/`tangency`/`shrinkage`/`constraints` (those are single-window static solves, checked instead by their own convexity/closed-form/monotonicity tests), and it says nothing about whether the walk-forward *result* is good, only that it is honestly out-of-sample. Day 7's frontier chart and weights table are a different view of numbers Days 2-3 already reported, not a new finding.
 
 ## Where this sits
 
