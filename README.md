@@ -1,5 +1,7 @@
 # Markowitz portfolio optimizer
 
+Educational research on historical data. Not investment advice. Not a SEBI-registered research analyst.
+
 Mean-variance optimization over an NSE universe, with the fragility of the inputs treated as the main finding rather than a footnote.
 
 **Status:** Complete on a 3-stock universe (Sep 2026). Next: rerun on 25–30 large caps. Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
