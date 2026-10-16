@@ -2,7 +2,7 @@
 
 Mean-variance optimization over an NSE universe, with the fragility of the inputs treated as the main finding rather than a footnote.
 
-**Status:** Last checkpoint 2026-09-25 · Next: headline-sentiment-vs-price Day 1 - RSS scraper respecting robots.txt, timestamped headlines
+**Status:** Complete on a 3-stock universe (Sep 2026). Next: rerun on 25–30 large caps. Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
 
 ## What this is
 
