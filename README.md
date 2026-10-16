@@ -4,6 +4,8 @@ Mean-variance optimization over an NSE universe, with the fragility of the input
 
 **Status:** Complete on a 3-stock universe (Sep 2026). Next: rerun on 25–30 large caps. Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
 
+*Educational research on historical data. Not investment advice. Not a SEBI-registered research analyst.*
+
 ## What this is
 
 Efficient frontier, tangency portfolio and capital market line, under realistic constraints - sector caps, position limits, turnover.
