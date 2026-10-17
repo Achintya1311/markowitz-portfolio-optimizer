@@ -1,0 +1,22 @@
+[project]
+name = "optimizer"
+version = "0.0.1"
+description = "Markowitz mean-variance portfolio optimizer: frontier, tangency portfolio, shrinkage, walk-forward evaluation."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "matplotlib",
+    "yfinance",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["optimizer*"]

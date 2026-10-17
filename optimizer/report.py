@@ -14,6 +14,7 @@ out differently.
 from __future__ import annotations
 
 import argparse
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +33,10 @@ ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = ROOT / "outputs"
 
 DEFAULT_N_POINTS = 25
+
+# Keep "frontier_{slug}.png" comfortably under a typical 255-byte filesystem
+# NAME_MAX even with the "frontier_"/".png" wrapping and a hash suffix (P19).
+MAX_SLUG_LEN = 200
 
 
 def plot_frontier(
@@ -191,6 +196,12 @@ def main(argv: list[str] | None = None) -> int:
         out_dir = Path(args.output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         slug = "-".join(t.replace(".", "_") for t in tickers)
+        if len(slug) > MAX_SLUG_LEN:
+            # P19: a plain dash-joined slug of every ticker overruns a
+            # typical 255-byte filename limit once the universe is large
+            # (29 names -> 253 chars before even adding "frontier_"/".png").
+            digest = hashlib.sha1("-".join(tickers).encode()).hexdigest()[:10]
+            slug = f"{slug[:MAX_SLUG_LEN]}_{digest}"
         chart_path = str(out_dir / f"frontier_{slug}.png")
         plot_frontier(
             tickers, result["mu_annual"], result["cov_annual"], result["frontier"],
