@@ -1,0 +1,61 @@
+name: Fetch large-cap OHLCV fixtures
+
+# D4 (hub CRITIQUES.md): the committed fixture is only 3 tickers
+# (RELIANCE.NS, TATACHEM.NS, CROMPTON.NS), so the unconstrained tangency
+# solve degenerates into a single-name corner in 9 of 11 walk-forward
+# folds. scripts/fetch_largecaps.py widens the universe to 25-30 Nifty 50
+# names from 2015 using the same free yfinance source the existing
+# fixture already uses - this just runs it without anyone starting it by
+# hand, since the free endpoint intermittently 429s or drops a NaN last
+# bar from a cloud sandbox IP (hub CRITIQUES.md D8), and Actions runners
+# draw from a larger, less-flagged IP pool.
+#
+# Triggers once on push of this file or the script itself, so committing
+# either one starts the first real fetch with no manual dispatch. The
+# weekly schedule keeps the fixture from going stale after that.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fetch-largecaps.yml"
+      - "scripts/fetch_largecaps.py"
+  schedule:
+    - cron: "30 11 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install pandas yfinance
+
+      - name: Fetch the large-cap universe (best effort)
+        # A 429 or an empty response from one name is not a workflow
+        # failure - scripts/fetch_largecaps.py already retries with
+        # backoff, and the commit step below is the real pass/fail signal
+        # for the day's run.
+        run: PYTHONPATH=. python3 scripts/fetch_largecaps.py
+        continue-on-error: true
+
+      - name: Commit if the fixture changed
+        run: |
+          git config user.name "Achintya1311"
+          git config user.email "67464985+Achintya1311@users.noreply.github.com"
+          git add fixtures/ohlcv
+          if git diff --cached --quiet; then
+            echo "no change in the fetched fixture - nothing to commit"
+            exit 0
+          fi
+          git commit -m "data: refresh large-cap OHLCV fixtures ($(date -u +%Y-%m-%d))"
+          git push
