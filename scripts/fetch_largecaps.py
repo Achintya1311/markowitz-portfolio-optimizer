@@ -8,9 +8,20 @@ room for diversification to matter. This widens the universe with the
 same free source the existing fixture already used (``yfinance``,
 ``auto_adjust=True``; see README "Data sources"), not a new one, and
 writes the exact shape ``optimizer/returns.py`` already reads: one
-``date,close,high,low,open,volume`` CSV per ticker under
-``fixtures/ohlcv/``, ascending by date, every ticker sharing the identical
-trading-day calendar (``load_returns_matrix`` raises if they don't).
+``date,close,high,low,open,volume`` CSV per ticker, ascending by date,
+every ticker sharing the identical trading-day calendar
+(``load_returns_matrix`` raises if they don't).
+
+Written to ``fixtures/ohlcv_largecap/``, **not** ``fixtures/ohlcv/`` - this
+universe includes RELIANCE.NS, which the original 3-ticker fixture already
+uses with a *different*, shorter history. The first version of this script
+wrote straight into ``fixtures/ohlcv/`` and silently overwrote that shared
+RELIANCE.NS fixture with this universe's longer one the moment the Actions
+workflow actually succeeded (Day 9, hub CRITIQUES.md) - its new calendar no
+longer matched TATACHEM.NS/CROMPTON.NS's, so every Day 1-8 test and finding
+built on ``load_returns_matrix(["RELIANCE.NS", "TATACHEM.NS", "CROMPTON.NS"])``
+broke. A separate directory keeps this universe's own copy of RELIANCE.NS
+out of the original fixture's way.
 
 Meant to run from ``.github/workflows/fetch-largecaps.yml``, triggered by
 pushing this file or the workflow file, or ``workflow_dispatch`` - not by
@@ -29,7 +40,7 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 
-FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "ohlcv"
+FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "ohlcv_largecap"
 
 START_DATE = "2015-01-01"
 

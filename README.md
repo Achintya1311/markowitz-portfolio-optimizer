@@ -4,7 +4,7 @@ Educational research on historical data. Not investment advice. Not a SEBI-regis
 
 Mean-variance optimization over an NSE universe, with the fragility of the inputs treated as the main finding rather than a footnote.
 
-**Status:** Complete on a 3-stock universe (Sep 2026). Next: rerun on 25–30 large caps. Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
+**Status:** Complete on a 3-stock universe (Sep 2026) and reran on a 29-name large-cap universe (17 Oct 2026, Day 9). Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
 
 *Educational research on historical data. Not investment advice. Not a SEBI-registered research analyst.*
 
@@ -412,11 +412,122 @@ non-reproducible between runs, since Python randomizes string-hash-based
 set iteration order per process - fixed by building it from `dict.fromkeys`
 instead, which preserves insertion order).
 
+**Day 9 - rerun on the large-cap universe (D4, hub CRITIQUES.md).** D4's
+critique of Days 1-8: with only 3 assets, the long-only max-Sharpe tangency
+solve is a 100% single-name corner in 9 of 11 walk-forward folds, and a
+sector cap degenerates into a plain position limit - both artifacts of too
+few names to choose from, not necessarily of the method. `scripts/fetch_largecaps.py`
+(Day 8) widens the universe to 25-30 Nifty 50 large caps; this day reruns
+`optimizer.stats`, `optimizer.shrinkage`, `optimizer.frontier` and
+`optimizer.oos` on it once the fixture existed, and reports the (different)
+honest result rather than assuming D4's hypothesis was confirmed.
+
+The fixture landed as 29 names, not 30: TATAMOTORS.NS returns a genuine
+yfinance 404 ("Quote not found for symbol"), not a rate limit - the same
+error pattern as a Tata Motors Yahoo-side symbol change, not something a
+retry fixes. `fetch_and_write`'s dict comprehension had no per-ticker error
+isolation, so that one permanent failure silently aborted the whole
+30-ticker batch on both of this workflow's first two runs - the Actions
+workflow reported `success` while writing zero fixture files either time.
+Fixed today: a ticker that still fails after `download_one`'s own retries
+is now skipped and logged, not allowed to abort the other 29 (2 new tests,
+`tests/test_fetch_largecaps.py`). The surviving universe is RELIANCE.NS,
+TCS.NS, HDFCBANK.NS, INFY.NS, ICICIBANK.NS, HINDUNILVR.NS, ITC.NS, SBIN.NS,
+BHARTIARTL.NS, KOTAKBANK.NS, LT.NS, AXISBANK.NS, BAJFINANCE.NS,
+ASIANPAINT.NS, MARUTI.NS, SUNPHARMA.NS, TITAN.NS, ULTRACEMCO.NS, WIPRO.NS,
+NESTLEIND.NS, POWERGRID.NS, NTPC.NS, ONGC.NS, COALINDIA.NS, TATASTEEL.NS,
+HCLTECH.NS, DRREDDY.NS, GRASIM.NS, HEROMOTOCO.NS - 2,910 trading days,
+2015-01-02 to 2026-10-15, under `fixtures/ohlcv_largecap/`, a **separate
+directory** from the original `fixtures/ohlcv/`.
+
+A second, more serious bug surfaced the moment the fetch actually
+succeeded: the script originally wrote straight into `fixtures/ohlcv/`,
+the same directory Days 1-8's 3-ticker fixture lives in - and this
+universe also includes RELIANCE.NS. The first successful run silently
+overwrote `fixtures/ohlcv/RELIANCE_NS.csv` with this universe's longer
+2015-2026 history, which no longer shared a trading-day calendar with the
+untouched `TATACHEM_NS.csv`/`CROMPTON_NS.csv`, and broke every Day 1-8
+test and the v0.4 sizing contract's own fixture with a calendar-mismatch
+`ValueError` - caught by running the full suite after that commit (78 of
+183 tests failed) rather than before pushing it further. Fixed by moving
+all 29 large-cap fixtures to `fixtures/ohlcv_largecap/`, restoring the
+original `fixtures/ohlcv/RELIANCE_NS.csv` from before the overwrite, and
+pointing `scripts/fetch_largecaps.py`'s `FIXTURES_DIR` default and the
+workflow's commit step at the new directory. 183/183 tests pass again
+after the fix, and the numbers below were re-confirmed against the
+relocated fixtures (`--fixtures-dir fixtures/ohlcv_largecap`) to make sure
+the move itself changed nothing.
+
+`optimizer.stats`: unlike the 3-ticker universe (every mean negative), all
+29 annualized sample means are positive, from ITC.NS (+4.50%) to
+BAJFINANCE.NS (+29.09%). Still mostly not distinguishable from zero at this
+sample size (only BAJFINANCE.NS clears |t|=2, at 2.79) - the same
+estimation-error problem Day 1 flagged, same conclusion, opposite sign. The
+covariance condition number is 33.7 (vs 3.2 at 3 names - expected with
+more assets estimated from the same window, not itself a red flag), and
+the split-half check is less stable in relative terms (covariance moved
+46.1% between halves, vs 19.1% at 3 names).
+
+`optimizer.shrinkage`: intensity is smaller still at this size, 1.6% (vs
+7.06% at 3 names) - 2,910 days is comfortably T>>n for 29 assets too, so
+there is correspondingly little for shrinkage to fix, consistent with Day
+4's own stress-test logic rather than contradicting it. The result Day 9
+was actually run to see: the long-only tangency portfolio (Ledoit-Wolf
+shrunk covariance, the v0.4 `max_sharpe_ledoit_wolf` method) is **no
+longer a 100%-single-name corner** - it is a genuine 7-name mix
+(RELIANCE.NS 6.05%, BHARTIARTL.NS 9.58%, BAJFINANCE.NS 20.58%, TITAN.NS
+19.16%, NESTLEIND.NS 16.54%, POWERGRID.NS 16.97%, HCLTECH.NS 11.13%), with
+Sharpe **+1.11** (vs -0.31 at 3 names) - the first positive-Sharpe
+long-only tangency portfolio this repo has reported on any universe.
+
+`optimizer.frontier` (target 12%): the long-only feasible range widens to
+[+4.50%, +29.09%] (vs [-34.07%, -6.42%] at 3 names, where no long-only
+portfolio could even target a positive return); all 25/25 swept target
+points are feasible and the variance-vs-return sweep is still convex. The
+minimum-variance point sits at +9.62% return / 13.33% vol, spread across
+15+ of the 29 names rather than concentrated in 2-3.
+
+`optimizer.oos` (same 252-day train / 21-day test windows as Day 6, now
+126 folds instead of 11): D4's corner-solution finding is directly
+addressed - only **1 of 126 folds** is a single-name solution now, down
+from 9 of 11. That part of D4 is confirmed as an artifact of a too-small
+universe, not of the max-Sharpe method itself. But the bottom-line result
+flips, not improves: compounded return over all 126 folds is **+309.00%**
+for the optimizer vs **+426.96%** for equal-weight - equal-weight wins
+this time, where it narrowly lost at 3 names. Win rate drops to 51.6%
+(from 54.5%), and the mean per-fold excess return's t-stat is **-0.50**
+(vs +0.07 before) - still nowhere near significant at any conventional
+confidence, same "no real signal" conclusion as Day 6, just with the sign
+of which side nominally comes out ahead flipped by which 11-vs-126-fold
+sample happened to be drawn. `optimizer.audit`'s two mechanical checks
+(fold boundaries, causality) are clean on this 126-fold run, same as Day
+7's 11-fold one.
+
+**Honest conclusion:** widening the universe resolves the single-name
+concentration D4 flagged, but does not surface a usable edge - equal-weight
+is still a result this optimizer does not clear with any statistical
+confidence, on either universe size. This rerun does not replace or
+invalidate Days 1-8's 3-ticker findings, which remain the accurate record
+for that universe and are what the v0.4 sizing contract to STOCKSTALKER
+(whose own screen universe is RELIANCE.NS/TATACHEM.NS/CROMPTON.NS, not this
+29-name one) is built from; this day is a separate, wider analysis that
+answers D4's specific critique rather than supersedes the earlier one. The
+same D8/Day 6 limitation still applies: no NSE index/benchmark fixture
+exists in this sandbox, so this is optimizer-vs-equal-weight only, not the
+optimizer-vs-index comparison `NEXT_STEPS.md` also asks for.
+
+Verified: 183/183 tests pass (`PYTHONPATH=. pytest`; bare `pytest` still
+can't collect this repo at all, pre-existing P17, unrelated, scoped to Day
+13). `optimizer.stats`, `optimizer.shrinkage`, `optimizer.frontier`,
+`optimizer.oos` and `optimizer.audit` were all run by hand against the real
+29-name fixture at the numbers quoted above.
+
 ## Checkpoint log
 
 <!-- CHECKPOINTS:START -->
 | Date | Commit | What changed | Next |
 |------|--------|--------------|------|
+| 2026-10-17 | `ded4e49` | Day 9 (hub CRITIQUES.md D4): reran `optimizer.stats`, `optimizer.shrinkage`, `optimizer.frontier` and `optimizer.oos` on the 29-name large-cap universe Day 8's `scripts/fetch_largecaps.py` fetches, now that its Actions workflow had actually landed a fixture. Found and fixed, first: `fetch_and_write` had no per-ticker error isolation, so TATAMOTORS.NS's genuine yfinance 404 ("Quote not found") silently aborted the whole 30-ticker batch on both of the workflow's first two runs -- it reported `success` while writing zero fixture files either time. Fixed to skip a permanently-failing ticker instead (2 new tests); the fixture then landed as 29 names, 2,910 days (2015-01-02..2026-10-15) -- but into `fixtures/ohlcv/`, the same directory the original 3-ticker fixture lives in, and this universe includes RELIANCE.NS: the successful run silently overwrote `fixtures/ohlcv/RELIANCE_NS.csv` with a longer, differently-calendared history, breaking every Day 1-8 test with a calendar-mismatch error (78/183 tests failed). Fixed second: moved all 29 large-cap fixtures to a new `fixtures/ohlcv_largecap/` directory, restored the original `RELIANCE_NS.csv`, and repointed the script's default and the workflow's commit step there; 183/183 tests pass again, and the rerun below was re-confirmed against the relocated fixtures to prove the move changed nothing. D4's own hypothesis confirmed on one count, not the other: the single-name tangency corner solution drops from 9/11 folds to 1/126, but the bottom line flips rather than improves -- equal-weight now beats the optimizer (+426.96% vs +309.00% compounded over 126 folds, 51.6% win rate, t=-0.50), where it narrowly lost at 3 names (t=+0.07) -- same "not significant" conclusion either way. All other Day 1-8 findings and the v0.4 sizing contract (built from the original 3-ticker fixture, STOCKSTALKER's own screen universe) are untouched; this is a separate, wider rerun, not a replacement. Verified: 183/183 tests pass (`PYTHONPATH=. pytest`), all five CLIs (`stats`, `shrinkage`, `frontier`, `oos`, `audit`) run by hand against the real 29-name fixture. | Day 10 -- NSE option chains on real data (implied-vol-surface), per hub NEXT_STEPS.md |
 | 2026-09-25 | `f098f44` | Integration day: shipped Stock Stalker v0.4 (optimizer-driven position sizing). optimizer.sizing combines Day 4's Ledoit-Wolf shrunk covariance with Day 5's sector-cap constraints to solve a sector-capped long-only max-Sharpe tangency portfolio, since Days 3/4/6/7 already found the raw unconstrained tangency is a 100% RELIANCE.NS corner solution -- not a position size any real book would take. --contract/--contract-ticker write the {sizing: {weight, method, constraint_binding}} JSON block as a file, never a Python import. On the spine side, STOCKSTALKER's new stockstalker.gates.sizing reads that file and attaches it to the one screen candidate whose ticker matches; report.py's new --sizing-contract/--sizing-ticker flags apply the gate and add two columns (Weight, Constraint) to the screen table when populated. Like v0.3's and v0.2's integrations, this is a genuine match: markowitz-portfolio-optimizer's fixtures come from STOCKSTALKER's own committed OHLCV history, so RELIANCE.NS is a real shared ticker. Honest result: RELIANCE.NS's sector cap (50%) binds immediately, and the freed weight goes entirely to TATACHEM.NS (CROMPTON.NS gets 0%) -- but the resulting Sharpe ratio (-0.83) is worse than the unconstrained corner solution's (-0.30), so forcing this diversification does not improve risk-adjusted return on this fixture set, recorded plainly rather than dressed up. Because every ticker in this 3-name universe sits in its own sector, the sector cap is mathematically identical to a plain position limit on RELIANCE.NS alone -- the same degeneracy Day 5 already found -- though a synthetic multi-sector test in tests/test_sizing.py exercises the distinct case. STOCKSTALKER bumped 0.7.2 -> 0.7.3, not 0.4.0, following the same out-of-pipeline-order version deviation v0.2's and v0.3's changelog entries already recorded. Verified honestly: 171/171 markowitz-portfolio-optimizer tests pass (16 new), 197/198 STOCKSTALKER tests pass (the one failure is the pre-existing live-network smoke test hitting a rate-limited yfinance response with a NaN close for today's date -- unrelated to this change), and both CLIs were run by hand end to end including the real RELIANCE.NS match. Also found and fixed both repos' and the hub's local main branches stuck in stale detached HEAD (the same recurring issue every prior integration day has hit) before committing. A real bug was caught and fixed during development: building the per-sector cap dict from a plain set() of sector names made optimizer.sizing's own CLI output non-deterministic between runs (Python randomizes string-hash-based set iteration order per process) -- fixed with dict.fromkeys instead. | headline-sentiment-vs-price Day 1 - RSS scraper respecting robots.txt, timestamped headlines |
 | 2026-09-25 | `bdb3739` | Day 7: frontier chart + weights terminal table (optimizer.report) and the ml-pipeline-audit pass (optimizer.audit), scoped to optimizer.oos - the only module in this repo with a time axis to leak across. optimizer.report reuses Day 2/3's build_frontier and max_sharpe_weights_long_only/capital_market_line verbatim, adding no new math: a long-only mean-vol frontier chart (tangency point + CML) to outputs/, and an aligned terminal table of min-variance vs max-Sharpe weights - both corner solutions on the real 3-ticker universe (min-var 56/21/22 split, tangency 100% RELIANCE.NS), consistent with Day 6's single-name concentration finding. optimizer.audit checks two mechanical invariants of optimizer.oos's walk-forward folds rather than trusting the slicing by inspection: fold train/test boundaries have no gap or overlap and no two folds' test windows overlap; and a fold's chosen weights are unchanged when every trading day after that fold's own test window is deleted, i.e. the decision never depends on data the strategy would not have had yet. Both checks pass clean on the real 11-fold run; a negative-control test injects a leaking training window and confirms the causality check actually fires, so the clean result isn't just an unfired check. Verified: 155/155 tests pass (17 new), both CLIs run by hand against the real fixtures - report wrote a real PNG and printed the weights table, audit printed and wrote a clean outputs/audit_<date>.md at exit 0. | markowitz-portfolio-optimizer is now 7/7 days done - next up is the integration day: read this satellite's v0.4 sizing contract ({"sizing": {"weight": 0.08, "method": "max_sharpe_ledoit_wolf"}}) and ship the matching Stock Stalker release from projects.json's releases list (position sizing on STOCKSTALKER's screen output). |
 | 2026-09-25 | `cb99616` | Day 6: walk-forward out-of-sample test (optimizer.oos) - fixed 252-day training window rolled forward through the fixture history in non-overlapping 21-day steps, solving the long-only max-Sharpe/Ledoit-Wolf tangency portfolio on each window and holding those weights (no rebalancing) through the following test window, scored against equal-weight held the same way. Honest result: the optimizer nominally beats equal-weight (-16.73% vs -17.33% compounded over 11 folds, 54.5% fold win rate) but mean per-fold excess return's t-stat is +0.07 - not distinguishable from zero, consistent with Day 1's finding that this universe's means carry no real signal. Second finding: with only 3 assets, the long-only tangency solve is a 100%-single-name corner solution in 9 of 11 folds, so this is mostly picking one name per period rather than diversifying. No NSE index/benchmark fixture exists anywhere in this sandbox (no network, zero spend), so this is optimizer-vs-equal-weight only, not the vs-index comparison NEXT_STEPS.md also asks for - stated on every CLI run and recorded in the README's limitations section rather than hidden. Verified: 138/138 tests pass (25 new), CLI run by hand at the default 252/21-day windows and again at 200/50-day windows. Also found and fixed both this repo's and the hub's local main branches stuck in stale detached HEAD (the same recurring issue every prior integration day has hit) before committing. | markowitz-portfolio-optimizer Day 7 - frontier chart to outputs/, weights as a terminal table, ml-pipeline-audit pass |
@@ -431,10 +542,11 @@ instead, which preserves insertion order).
 
 - Mean-variance is famously sensitive to expected returns, which are estimated with large error. Small input changes move weights a lot. Day 1 measured this directly: all three tickers' annualized mean estimates have |t| < 2, i.e. none is statistically distinguishable from zero over this sample.
 - Covariance estimated from a trailing window assumes a stability that does not survive regime changes. Day 1's split-half check found the covariance matrix moved 19% (relative Frobenius norm) and TATACHEM.NS's mean swung 25 points between the first and second half of the same 501-day window - the window itself is not obviously one regime.
-- Only 3 tickers so far (the shared Stock Stalker universe). A 3-asset covariance matrix's condition number (3.2) says little about how the estimator will behave once the universe grows to the ~10-20 names later days will need.
-- Day 6's walk-forward test found the optimizer nominally beats equal-weight (-16.73% vs -17.33% compounded over 11 out-of-sample folds, 54.5% fold win rate) but the mean per-fold excess return's t-stat is +0.07 - not distinguishable from zero at any conventional confidence. Out-of-sample, equal-weight is a hard benchmark to beat, and this is not a case where the optimizer cleared that bar convincingly; the closeness of the two totals is itself consistent with Day 1's finding that this universe's mean estimates carry essentially no signal.
-- Day 6's optimizer is a 3-asset long-only max-Sharpe solve, which is a corner solution (100% in one name) in 9 of its 11 out-of-sample folds - "optimization" here is mostly picking the best-looking single name each period, not diversification, purely a consequence of having only 3 assets to choose from.
-- There is no NSE index/benchmark fixture committed anywhere in this sandbox (no network access here, and none was ever fetched for this pipeline), so Day 6's out-of-sample comparison is optimizer-vs-equal-weight only - it does not include the vs-index leg `NEXT_STEPS.md` asks for. `optimizer.oos` states this on every run rather than substituting a fabricated benchmark.
+- Days 1-8 ran on only 3 tickers (the shared Stock Stalker universe). Day 9 (D4) reran `stats`/`shrinkage`/`frontier`/`oos` on a 29-name large-cap universe once `scripts/fetch_largecaps.py`'s fixture landed - see the Findings section for that rerun. It is a separate, wider analysis, not a replacement: the v0.4 sizing contract STOCKSTALKER reads still comes from this repo's original 3-ticker fixture, because that is STOCKSTALKER's own screen universe.
+- Day 6's walk-forward test found the optimizer nominally beats equal-weight on the 3-ticker universe (-16.73% vs -17.33% compounded over 11 out-of-sample folds, 54.5% fold win rate) but the mean per-fold excess return's t-stat is +0.07 - not distinguishable from zero at any conventional confidence. Day 9's 126-fold rerun on 29 names flips which side nominally wins (equal-weight +426.96% vs optimizer +309.00%, 51.6% win rate, t-stat -0.50) while reaching the same "not significant" conclusion - out-of-sample, equal-weight is a hard benchmark to beat on either universe size, and neither result should be read as the optimizer (or equal-weight) having a real edge.
+- Day 6's 3-asset long-only max-Sharpe solve was a corner solution (100% in one name) in 9 of its 11 out-of-sample folds - "optimization" there was mostly picking the best-looking single name each period, not diversification, purely a consequence of having only 3 assets to choose from. Day 9 confirms this was indeed a too-small-universe artifact: on the 29-name rerun, only 1 of 126 folds is a single-name corner solution.
+- There is no NSE index/benchmark fixture committed anywhere in this sandbox (no network access here, and none was ever fetched for this pipeline), so both Day 6's and Day 9's out-of-sample comparisons are optimizer-vs-equal-weight only - neither includes the vs-index leg `NEXT_STEPS.md` asks for. `optimizer.oos` states this on every run rather than substituting a fabricated benchmark.
+- Day 9's large-cap fixture is 29 names, not the 30 `scripts/fetch_largecaps.py` targets: TATAMOTORS.NS returns a genuine yfinance 404 ("Quote not found for symbol"), not a transient rate limit, so it is skipped rather than retried into existing. `fetch_and_write` now treats a permanently-failing ticker as droppable rather than fatal to the whole batch - before this fix, that one ticker silently aborted the Actions workflow's fixture write on both of its first two runs (it reported `success` while writing zero files).
 - Day 2's frontier ranks portfolios by the same sample mean vector Day 1 showed has |t| < 2 on every ticker. Concretely: all three means are negative, so every long-only frontier point here targets a *loss*, and a positive-return target is only reachable long/short, by shorting the least-negative name and going long the more-negative ones - an artifact of noisy point estimates as much as a real edge, not a strategy this repo is recommending.
 - The long/short variant (`optimizer.frontier`, `optimizer.constraints --long-short`) still has no *leverage* limit - `--max-position` caps each name's magnitude but says nothing about gross exposure, so a long/short target far from the feasible long-only range can still imply large aggregate short exposure across several names even with every individual position capped.
 - Day 5's sector caps are implemented and tested (a synthetic 4-asset/2-sector universe in `tests/test_constraints.py` shows one genuinely binding differently from a position limit), but on this repo's real 3-ticker universe every ticker is in its own sector, so a sector cap here is mathematically identical to a plain position limit - not a distinct constraint on this fixture set, and the CLI says so.

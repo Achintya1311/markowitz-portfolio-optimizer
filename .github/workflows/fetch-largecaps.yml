@@ -52,7 +52,7 @@ jobs:
         run: |
           git config user.name "Achintya1311"
           git config user.email "67464985+Achintya1311@users.noreply.github.com"
-          git add fixtures/ohlcv
+          git add fixtures/ohlcv_largecap
           if git diff --cached --quiet; then
             echo "no change in the fetched fixture - nothing to commit"
             exit 0
