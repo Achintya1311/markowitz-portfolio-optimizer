@@ -87,6 +87,47 @@ def test_fetch_and_write_aligns_every_ticker_onto_one_shared_calendar(tmp_path, 
     assert matrix.shape == (1, 2)
 
 
+def test_fetch_and_write_skips_a_permanently_failing_ticker_instead_of_aborting_the_whole_batch(
+    tmp_path, monkeypatch
+):
+    # D4/Day 9 (hub CRITIQUES.md): the real DEFAULT_TICKERS run hit exactly
+    # this -- TATAMOTORS.NS 404s on yfinance ("Quote not found") after 4
+    # retries, and the old fetch_and_write let that one RuntimeError from
+    # download_one abort the dict comprehension for the whole 30-ticker
+    # batch, so the Actions workflow's "best effort" fetch step quietly
+    # wrote zero fixtures every single run.
+    raw = {
+        "A.NS": _frame(["2024-01-01", "2024-01-02", "2024-01-03"]),
+        "C.NS": _frame(["2024-01-01", "2024-01-02", "2024-01-03"], close=50.0),
+    }
+
+    def fake_download_one(ticker, start, end, max_retries=4):
+        if ticker == "BAD.NS":
+            raise RuntimeError("BAD.NS: no usable data after 4 attempts")
+        return raw[ticker]
+
+    monkeypatch.setattr(fetch_largecaps, "download_one", fake_download_one)
+
+    paths = fetch_largecaps.fetch_and_write(["A.NS", "BAD.NS", "C.NS"], fixtures_dir=tmp_path)
+
+    assert len(paths) == 2
+    assert {p.name for p in paths} == {"A_NS.csv", "C_NS.csv"}
+    assert not (tmp_path / "BAD_NS.csv").exists()
+
+
+def test_fetch_and_write_raises_if_too_few_tickers_survive_failures(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        fetch_largecaps,
+        "download_one",
+        lambda ticker, start, end, max_retries=4: (_ for _ in ()).throw(
+            RuntimeError(f"{ticker}: no usable data after 4 attempts")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="fewer than 2 tickers had usable data"):
+        fetch_largecaps.fetch_and_write(["A.NS", "B.NS"], fixtures_dir=tmp_path)
+
+
 def test_fetch_and_write_raises_if_tickers_share_no_trading_day(tmp_path, monkeypatch):
     raw = {
         "A.NS": _frame(["2024-01-01"]),

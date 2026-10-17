@@ -122,7 +122,20 @@ def fetch_and_write(
     end: str | None = None,
     fixtures_dir: Path = FIXTURES_DIR,
 ) -> list[Path]:
-    frames = {t: download_one(t, start, end) for t in tickers}
+    """Best-effort fetch: a ticker that still has no usable data after
+    ``download_one``'s own retries (D4/Day 9 - e.g. TATAMOTORS.NS 404ing
+    on yfinance as "Quote not found") is skipped and logged, not allowed to
+    abort every other ticker's fetch."""
+    frames: dict[str, pd.DataFrame] = {}
+    for t in tickers:
+        try:
+            frames[t] = download_one(t, start, end)
+        except RuntimeError as exc:
+            print(f"skipping {t}: {exc}", file=sys.stderr)
+    if len(frames) < 2:
+        raise RuntimeError(
+            f"fewer than 2 tickers had usable data ({len(frames)}/{len(tickers)} succeeded)"
+        )
     calendar = common_calendar(frames)
     if len(calendar) < 2:
         raise RuntimeError("no shared trading days across the requested tickers - check the ticker list")
