@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from optimizer.constraints import constrained_min_variance
 from optimizer.covariance import sample_mean_cov
 from optimizer.returns import FIXTURES_DIR, annualize_cov, annualize_mean, load_returns_matrix
 from optimizer.shrinkage import ledoit_wolf_shrinkage
@@ -45,10 +46,40 @@ from optimizer.tangency import DEFAULT_RISK_FREE_RATE, max_sharpe_weights_long_o
 DEFAULT_TRAIN_WINDOW = 252
 DEFAULT_TEST_WINDOW = 21
 
+# Indian delivery-equity cost schedule, reused from STOCKSTALKER's own
+# backtest (stockstalker/backtest.py: STT_RATE=0.001 both legs,
+# STAMP_DUTY_RATE=0.00015 buy leg only, DEFAULT_SLIPPAGE_BPS=10 both legs -
+# the same schedule R8 already made decisive for that repo's backtest).
+# A rebalance from w_prev to w_new buys sum(max(w_new - w_prev, 0)) and
+# sells sum(max(w_prev - w_new, 0)) of book value; because weights sum to 1
+# both before and after, those two amounts are always equal - each exactly
+# half of the L1 turnover sum(|w_new - w_prev|). So the blended cost per
+# unit of L1 turnover is the average of the two legs' per-unit rates: STT
+# (charged on both legs) + slippage (both legs) + half the stamp duty (buy
+# leg only) = 0.001 + 0.001 + 0.00015 / 2 = 0.2075%.
+STT_RATE = 0.001
+STAMP_DUTY_RATE = 0.00015
+SLIPPAGE_BPS = 10.0
+TURNOVER_COST_RATE = STT_RATE + STAMP_DUTY_RATE / 2 + SLIPPAGE_BPS / 10_000
+
 
 @dataclass
 class FoldResult:
-    """One walk-forward step: a training window's weights, held over the next test window."""
+    """One walk-forward step: a training window's weights, held over the next test window.
+
+    ``optimizer_turnover_l1``/``optimizer_cost`` are this fold's rebalance
+    away from the *previous* fold's realized optimizer weights (equal-weight
+    for fold 0), costed at ``TURNOVER_COST_RATE`` (R9, hub CRITIQUES.md).
+    ``equal_weight_turnover_l1``/``equal_weight_cost`` are always 0.0: this
+    walk-forward resets the equal-weight leg to exactly 1/n every fold with
+    no within-period price drift tracked (see module docstring), so there is
+    no drift to rebalance away from - the README's limitations section says
+    so plainly rather than fabricating a nonzero drift-rebalancing cost this
+    model does not simulate. ``baseline_turnover_l1`` is what the optimizer's
+    turnover would have been from the plain (unpenalized) tangency weights;
+    it equals ``optimizer_turnover_l1`` unless ``used_turnover_penalty`` is
+    True.
+    """
 
     fold: int
     train_start_date: str
@@ -61,10 +92,28 @@ class FoldResult:
     used_fallback: bool
     optimizer_return: float
     equal_weight_return: float
+    optimizer_turnover_l1: float = 0.0
+    optimizer_cost: float = 0.0
+    equal_weight_turnover_l1: float = 0.0
+    equal_weight_cost: float = 0.0
+    baseline_turnover_l1: float = 0.0
+    used_turnover_penalty: bool = False
 
     @property
     def excess_return(self) -> float:
         return self.optimizer_return - self.equal_weight_return
+
+    @property
+    def optimizer_return_net(self) -> float:
+        return self.optimizer_return - self.optimizer_cost
+
+    @property
+    def equal_weight_return_net(self) -> float:
+        return self.equal_weight_return - self.equal_weight_cost
+
+    @property
+    def excess_return_net(self) -> float:
+        return self.optimizer_return_net - self.equal_weight_return_net
 
 
 @dataclass
@@ -77,6 +126,7 @@ class OOSResult:
     risk_free: float
     folds: list[FoldResult]
     unused_days: int
+    turnover_lambda: float = 0.0
     optimizer_compounded_return: float = field(init=False)
     equal_weight_compounded_return: float = field(init=False)
     win_rate: float = field(init=False)
@@ -84,6 +134,17 @@ class OOSResult:
     std_excess: float = field(init=False)
     t_stat_excess: float | None = field(init=False)
     n_fallback: int = field(init=False)
+    optimizer_compounded_return_net: float = field(init=False)
+    equal_weight_compounded_return_net: float = field(init=False)
+    mean_excess_net: float = field(init=False)
+    std_excess_net: float = field(init=False)
+    t_stat_excess_net: float | None = field(init=False)
+    avg_optimizer_turnover_l1: float = field(init=False)
+    avg_equal_weight_turnover_l1: float = field(init=False)
+    avg_baseline_turnover_l1: float = field(init=False)
+    total_optimizer_cost: float = field(init=False)
+    total_equal_weight_cost: float = field(init=False)
+    n_turnover_penalty_used: int = field(init=False)
 
     def __post_init__(self):
         opt_returns = np.array([f.optimizer_return for f in self.folds])
@@ -100,6 +161,32 @@ class OOSResult:
         else:
             self.t_stat_excess = None
         self.n_fallback = sum(1 for f in self.folds if f.used_fallback)
+
+        opt_returns_net = np.array([f.optimizer_return_net for f in self.folds])
+        eq_returns_net = np.array([f.equal_weight_return_net for f in self.folds])
+        excess_net = opt_returns_net - eq_returns_net
+
+        self.optimizer_compounded_return_net = float(np.prod(1.0 + opt_returns_net) - 1.0)
+        self.equal_weight_compounded_return_net = float(np.prod(1.0 + eq_returns_net) - 1.0)
+        self.mean_excess_net = float(np.mean(excess_net)) if len(excess_net) else 0.0
+        self.std_excess_net = float(np.std(excess_net, ddof=1)) if len(excess_net) > 1 else 0.0
+        if len(excess_net) > 1 and self.std_excess_net > 0:
+            self.t_stat_excess_net = self.mean_excess_net / (self.std_excess_net / np.sqrt(len(excess_net)))
+        else:
+            self.t_stat_excess_net = None
+
+        self.avg_optimizer_turnover_l1 = (
+            float(np.mean([f.optimizer_turnover_l1 for f in self.folds])) if self.folds else 0.0
+        )
+        self.avg_equal_weight_turnover_l1 = (
+            float(np.mean([f.equal_weight_turnover_l1 for f in self.folds])) if self.folds else 0.0
+        )
+        self.avg_baseline_turnover_l1 = (
+            float(np.mean([f.baseline_turnover_l1 for f in self.folds])) if self.folds else 0.0
+        )
+        self.total_optimizer_cost = float(np.sum([f.optimizer_cost for f in self.folds]))
+        self.total_equal_weight_cost = float(np.sum([f.equal_weight_cost for f in self.folds]))
+        self.n_turnover_penalty_used = sum(1 for f in self.folds if f.used_turnover_penalty)
 
 
 def walk_forward_folds(n_days: int, train_window: int, test_window: int) -> list[tuple[slice, slice]]:
@@ -143,7 +230,21 @@ def run_fold(
     test_slice: slice,
     fold_index: int,
     risk_free: float,
+    turnover_lambda: float = 0.0,
+    prev_optimizer_weights: np.ndarray | None = None,
+    tickers: list[str] | None = None,
 ) -> FoldResult:
+    """Solve one fold's weights and cost its rebalance from the previous fold (R9).
+
+    ``turnover_lambda`` > 0 reuses :func:`optimizer.constraints.constrained_min_variance`
+    (Day 5's turnover-penalized solve) to re-solve for the same expected
+    return the plain tangency weights targeted, but penalized for moving
+    away from ``prev_optimizer_weights`` - requires ``tickers`` (one per
+    asset) since that function's sector-cap machinery expects them, even
+    though no sector cap is applied here. If the penalized solve is
+    infeasible, this fold falls back to the plain tangency weights, same as
+    an infeasible tangency solve falls back to equal-weight.
+    """
     n_assets = returns_matrix.shape[1]
     train_returns = returns_matrix[train_slice]
 
@@ -152,12 +253,38 @@ def run_fold(
     mu = annualize_mean(mu_daily)
     cov_shrunk = annualize_cov(cov_shrunk_daily)
 
+    equal_weight = np.full(n_assets, 1.0 / n_assets)
+    if prev_optimizer_weights is None:
+        prev_optimizer_weights = equal_weight
+
     tangency = max_sharpe_weights_long_only(mu, cov_shrunk, risk_free)
     used_fallback = not tangency.success
-    weights = tangency.weights if tangency.success else np.full(n_assets, 1.0 / n_assets)
+    baseline_weights = tangency.weights if tangency.success else equal_weight
+
+    weights = baseline_weights
+    used_turnover_penalty = False
+    if turnover_lambda > 0 and tangency.success:
+        if tickers is None:
+            raise ValueError("tickers is required when turnover_lambda > 0")
+        target_return = float(baseline_weights @ mu)
+        penalized = constrained_min_variance(
+            mu,
+            cov_shrunk,
+            target_return,
+            tickers,
+            long_only=True,
+            turnover_lambda=turnover_lambda,
+            prev_weights=prev_optimizer_weights,
+        )
+        if penalized.success:
+            weights = penalized.weights
+            used_turnover_penalty = True
 
     test_returns = total_simple_returns(returns_matrix[test_slice])
-    equal_weight = np.full(n_assets, 1.0 / n_assets)
+
+    optimizer_turnover_l1 = float(np.sum(np.abs(weights - prev_optimizer_weights)))
+    baseline_turnover_l1 = float(np.sum(np.abs(baseline_weights - prev_optimizer_weights)))
+    optimizer_cost = TURNOVER_COST_RATE * optimizer_turnover_l1
 
     return FoldResult(
         fold=fold_index,
@@ -171,6 +298,10 @@ def run_fold(
         used_fallback=used_fallback,
         optimizer_return=float(weights @ test_returns),
         equal_weight_return=float(equal_weight @ test_returns),
+        optimizer_turnover_l1=optimizer_turnover_l1,
+        optimizer_cost=optimizer_cost,
+        baseline_turnover_l1=baseline_turnover_l1,
+        used_turnover_penalty=used_turnover_penalty,
     )
 
 
@@ -196,12 +327,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fixtures-dir", default=str(FIXTURES_DIR), help="directory of <TICKER>.csv fixtures (default: fixtures/ohlcv)"
     )
+    parser.add_argument(
+        "--turnover-lambda",
+        type=float,
+        default=0.0,
+        help="quadratic turnover-penalty coefficient, reused from optimizer.constraints "
+        "(default: 0.0, plain unconstrained tangency weights every fold)",
+    )
     return parser
 
 
-def run(tickers: list[str], fixtures_dir: str, train_window: int, test_window: int, risk_free: float) -> OOSResult:
+def run(
+    tickers: list[str],
+    fixtures_dir: str,
+    train_window: int,
+    test_window: int,
+    risk_free: float,
+    turnover_lambda: float = 0.0,
+) -> OOSResult:
     dates, returns_matrix = load_returns_matrix(tickers, fixtures_dir)
     n_days = returns_matrix.shape[0]
+    n_assets = returns_matrix.shape[1]
 
     fold_slices = walk_forward_folds(n_days, train_window, test_window)
     if not fold_slices:
@@ -210,10 +356,23 @@ def run(tickers: list[str], fixtures_dir: str, train_window: int, test_window: i
             f"train_window={train_window} + test_window={test_window} fold"
         )
 
-    folds = [
-        run_fold(returns_matrix, dates, train_slice, test_slice, i, risk_free)
-        for i, (train_slice, test_slice) in enumerate(fold_slices)
-    ]
+    folds = []
+    prev_optimizer_weights = np.full(n_assets, 1.0 / n_assets)
+    for i, (train_slice, test_slice) in enumerate(fold_slices):
+        fold = run_fold(
+            returns_matrix,
+            dates,
+            train_slice,
+            test_slice,
+            i,
+            risk_free,
+            turnover_lambda=turnover_lambda,
+            prev_optimizer_weights=prev_optimizer_weights,
+            tickers=tickers,
+        )
+        folds.append(fold)
+        prev_optimizer_weights = fold.optimizer_weights
+
     used_days = fold_slices[-1][1].stop
     return OOSResult(
         tickers=tickers,
@@ -222,6 +381,7 @@ def run(tickers: list[str], fixtures_dir: str, train_window: int, test_window: i
         risk_free=risk_free,
         folds=folds,
         unused_days=n_days - used_days,
+        turnover_lambda=turnover_lambda,
     )
 
 
@@ -246,7 +406,7 @@ def _format_report(result: OOSResult) -> str:
         )
     lines.append("")
 
-    lines.append(f"compounded return over all {len(result.folds)} test windows:")
+    lines.append(f"compounded return over all {len(result.folds)} test windows, before transaction costs:")
     lines.append(f"  optimizer:    {result.optimizer_compounded_return:+.4%}")
     lines.append(f"  equal-weight: {result.equal_weight_compounded_return:+.4%}")
     lines.append("")
@@ -263,19 +423,78 @@ def _format_report(result: OOSResult) -> str:
 
     if result.equal_weight_compounded_return > result.optimizer_compounded_return:
         lines.append(
-            "honest result: equal-weight beat the optimizer over this walk-forward run. Reported as found, "
-            "not as a footnote - see the README's limitations section."
+            "honest result, before costs: equal-weight beat the optimizer over this walk-forward run. Reported "
+            "as found, not as a footnote - see the README's limitations section."
         )
     else:
         lines.append(
-            "the optimizer beat equal-weight over this walk-forward run, but see the t-stat above and the "
-            "README's limitations section before reading that as a durable edge."
+            "before costs, the optimizer beat equal-weight over this walk-forward run, but see the t-stat above "
+            "and the README's limitations section before reading that as a durable edge."
         )
     lines.append(
         "limitation: no NSE index/benchmark fixture is committed anywhere in this sandbox (no network, zero "
         "spend) - this is optimizer-vs-equal-weight only, not the optimizer-vs-index comparison NEXT_STEPS.md "
         "asks for."
     )
+    lines.append("")
+
+    lines.append(
+        f"transaction costs (R9, hub CRITIQUES.md): STT {STT_RATE:.2%}/leg + stamp duty "
+        f"{STAMP_DUTY_RATE:.3%} (buy leg only) + {SLIPPAGE_BPS:.0f}bps slippage/leg - STOCKSTALKER's own "
+        f"backtest schedule - charged on each fold's L1 turnover from the previous fold's held weights, "
+        f"blended to {TURNOVER_COST_RATE:.4%} per unit of L1 turnover (see optimizer.oos module docstring)."
+    )
+    lines.append(
+        f"  average per-fold L1 turnover: optimizer {result.avg_optimizer_turnover_l1:.2%}   "
+        f"equal-weight {result.avg_equal_weight_turnover_l1:.2%} (always ~0 - see FoldResult docstring: "
+        f"this walk-forward resets equal-weight to exactly 1/n every fold with no drift tracked)"
+    )
+    if result.turnover_lambda > 0:
+        lines.append(
+            f"  --turnover-lambda {result.turnover_lambda:g}: the turnover-penalized solve "
+            f"(optimizer.constraints.constrained_min_variance) was used in "
+            f"{result.n_turnover_penalty_used}/{len(result.folds)} folds; average per-fold L1 turnover "
+            f"without it would have been {result.avg_baseline_turnover_l1:.2%} (plain tangency weights)"
+        )
+    lines.append(
+        f"  sum of per-fold cost rates (not compounded - see the before/after compounded "
+        f"returns below for the actual effect): optimizer {result.total_optimizer_cost:.4%}   "
+        f"equal-weight {result.total_equal_weight_cost:.4%}"
+    )
+    lines.append("")
+
+    lines.append(f"compounded return over all {len(result.folds)} test windows, after transaction costs:")
+    lines.append(
+        f"  optimizer:    {result.optimizer_compounded_return_net:+.4%}  "
+        f"(before costs: {result.optimizer_compounded_return:+.4%})"
+    )
+    lines.append(
+        f"  equal-weight: {result.equal_weight_compounded_return_net:+.4%}  "
+        f"(before costs: {result.equal_weight_compounded_return:+.4%})"
+    )
+    lines.append("")
+    lines.append(f"mean per-fold excess return, after costs: {result.mean_excess_net:+.4%}   std: {result.std_excess_net:.4%}")
+    if result.t_stat_excess_net is None:
+        lines.append("t-stat of mean excess, after costs: not computable (fewer than 2 folds, or zero variance)")
+    else:
+        verdict_net = (
+            "distinguishable from zero at conventional confidence"
+            if abs(result.t_stat_excess_net) >= 2
+            else "NOT distinguishable from zero at conventional confidence"
+        )
+        lines.append(f"t-stat of mean excess, after costs: {result.t_stat_excess_net:+.2f} ({verdict_net})")
+    lines.append("")
+
+    if result.equal_weight_compounded_return_net > result.optimizer_compounded_return_net:
+        lines.append(
+            "honest result, after costs: equal-weight still beats the optimizer once transaction costs are "
+            "charged - R9's expectation that costs would widen, not narrow, equal-weight's margin."
+        )
+    else:
+        lines.append(
+            "honest result, after costs: the optimizer still beats equal-weight after transaction costs, but "
+            "see the after-cost t-stat above before reading that as a durable edge."
+        )
     return "\n".join(lines)
 
 
@@ -283,7 +502,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
-    result = run(tickers, args.fixtures_dir, args.train_window, args.test_window, args.risk_free_rate)
+    result = run(
+        tickers, args.fixtures_dir, args.train_window, args.test_window, args.risk_free_rate, args.turnover_lambda
+    )
     print(_format_report(result))
     return 0
 

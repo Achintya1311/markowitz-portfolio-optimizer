@@ -4,13 +4,13 @@ Educational research on historical data. Not investment advice. Not a SEBI-regis
 
 **Question:** does mean-variance optimization actually beat a naive equal-weight portfolio out-of-sample, and does that answer hold once the universe is bigger than 3 names?
 **Method:** walk-forward (non-overlapping rolling-window) long-only max-Sharpe tangency on a Ledoit-Wolf shrunk covariance, scored against equal-weight, rerun on both a 3-ticker and a 29-name large-cap universe.
-**Finding (Day 9):** widening the universe fixes the 3-ticker single-name corner solution (9/11 folds → 1/126), but the walk-forward bottom line flips the other way — equal-weight now beats the optimizer (+426.96% vs. +309.00% compounded, 126 folds) — and neither result is statistically significant (t=-0.50).
+**Finding (Day 9, cost-adjusted Day 40):** widening the universe fixes the 3-ticker single-name corner solution (9/11 folds → 1/126), but the walk-forward bottom line flips the other way — equal-weight now beats the optimizer (+426.96% vs. +309.00% compounded, 126 folds) — and neither result is statistically significant (t=-0.50). Charging the same transaction-cost schedule the rest of this portfolio already treats as decisive (R9) widens the gap, not narrows it: the optimizer's 57.6% average monthly turnover (equal-weight's is ~0, since it is reset to exactly 1/n every fold) pulls its compounded return down to +252.20% after costs — a much bigger drop than the 15.06-point sum of per-fold cost rates would suggest, because costs compound against a smaller capital base in every later fold.
 **Chart:** `outputs/` frontier chart (tangency point + capital market line) from `optimizer.report`.
 **Reproduce:** `python -m optimizer.report --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS`
 
 Mean-variance optimization over an NSE universe, with the fragility of the inputs treated as the main finding rather than a footnote.
 
-**Status:** Complete on a 3-stock universe (Sep 2026) and reran on a 29-name large-cap universe (17 Oct 2026, Day 9). Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
+**Status:** Complete on a 3-stock universe (Sep 2026), reran on a 29-name large-cap universe (17 Oct 2026, Day 9), and cost-adjusted (18 Oct 2026, Day 40). Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
 
 *Educational research on historical data. Not investment advice. Not a SEBI-registered research analyst.*
 
@@ -45,7 +45,7 @@ python -m optimizer.shrinkage --tickers TICKER1.NS,TICKER2.NS --risk-free-rate 0
 python -m optimizer.constraints --tickers TICKER1.NS,TICKER2.NS,TICKER3.NS --target-return -0.15 \
     --max-position 0.6 --turnover-lambda 50 --prev-weights 0.2,0.3,0.5
 python -m optimizer.oos --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS \
-    --train-window 252 --test-window 21
+    --train-window 252 --test-window 21 --turnover-lambda 5
 python -m optimizer.report --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS --risk-free-rate 0.065
 python -m optimizer.audit --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS
 python -m optimizer.sizing --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS --sector-cap 0.5 \
@@ -67,7 +67,7 @@ global minimum-variance and long-only tangency weights move between the two.
 
 `optimizer.stats` (Day 1) is the returns/covariance diagnostic below; `optimizer.frontier` (Day 2) solves the minimum-variance portfolio for one target return, long-only and long/short; `optimizer.tangency` (Day 3) solves the maximum-Sharpe tangency portfolio and reports the capital market line. `--risk-free-rate` defaults to `0.0` - there is no committed risk-free-rate fixture and no live FRED/RBI fetch available offline, so pass a real annualized rate explicitly if you have one.
 
-`optimizer.oos` (Day 6) walks a fixed-length training window forward through the fixture history, solving the long-only max-Sharpe/Ledoit-Wolf tangency portfolio on each window and holding it (no rebalancing) through the following test window, scored against equal-weight held the same way. `--train-window`/`--test-window` are in trading days (default 252/21, roughly one year training, one month holding).
+`optimizer.oos` (Day 6) walks a fixed-length training window forward through the fixture history, solving the long-only max-Sharpe/Ledoit-Wolf tangency portfolio on each window and holding it (no rebalancing) through the following test window, scored against equal-weight held the same way. `--train-window`/`--test-window` are in trading days (default 252/21, roughly one year training, one month holding). Day 40 adds a transaction-cost term (STOCKSTALKER's own STT + stamp duty + slippage schedule, R9) on each fold's L1 turnover from the previous fold's held weights, reporting gross and cost-adjusted compounded return/t-stat side by side; `--turnover-lambda` reuses `optimizer.constraints`'s turnover-penalized solve to re-target the same expected return with less rebalancing.
 
 `optimizer.report` (Day 7) writes a long-only frontier chart (with the tangency point and capital market line) to `outputs/` and prints the min-variance and max-Sharpe weights as an aligned terminal table; pass `--no-chart` to skip the PNG. `optimizer.audit` (Day 7) is the `ml-pipeline-audit` pass: checks `optimizer.oos`'s walk-forward folds for boundary gaps/overlaps and for a fold's decision depending on data after its own test window, printing a summary and writing `outputs/audit_<date>.md`; exits non-zero if either check finds a violation.
 
@@ -528,6 +528,90 @@ can't collect this repo at all, pre-existing P17, unrelated, scoped to Day
 `optimizer.oos` and `optimizer.audit` were all run by hand against the real
 29-name fixture at the numbers quoted above.
 
+**Day 40 - cost-adjust the walk-forward, and a turnover-penalty escape
+hatch (R9, hub CRITIQUES.md).** R9's critique of Days 6 and 9: `optimizer.oos`
+charges no transaction cost anywhere, even though this portfolio's own
+backtest (STOCKSTALKER, R8) already treats the same cost schedule as
+decisive enough to flip a result. Measured directly from the committed
+29-name run's fold-to-fold weights, the optimizer's turnover averages 57.6%
+of the book every month - equal-weight's rebalance-back-to-1/n has nothing
+to turn over in this walk-forward design (see below), so reporting the
+gross number as "equal-weight wins" was actually generous to the optimizer,
+not neutral.
+
+`optimizer.oos` now costs each fold's L1 turnover from the *previous*
+fold's realized weights at a blended rate derived from STOCKSTALKER's own
+STT/stamp-duty/slippage schedule (0.10% STT + 0.015% stamp duty, buy leg
+only + 10bps slippage, both legs → 0.2075% per unit of L1 turnover; see
+`optimizer.oos`'s module docstring for the half-stamp-duty derivation - buy
+and sell legs are each exactly half of L1 turnover because weights sum to 1
+before and after). Equal-weight's own turnover is always exactly 0: this
+walk-forward resets it to precisely 1/n every fold with no within-period
+price drift tracked, so there is no drift to rebalance away from - a real
+book would pay something to pull drifted weights back to 1/n, but this
+model does not simulate that drift, and this is now stated plainly as a
+limitation rather than fabricated as a number.
+
+Re-run on the real 29-name large-cap fixture (same 252-day train/21-day
+test windows as Day 9, `--fixtures-dir fixtures/ohlcv_largecap`):
+
+| | gross (Day 9) | after costs (Day 40) |
+|---|---|---|
+| optimizer compounded return | +309.00% | **+252.20%** |
+| equal-weight compounded return | +426.96% | +426.96% (cost ≈ 0) |
+| mean per-fold excess t-stat | -0.50 | **-0.86** |
+
+Costs widen equal-weight's margin, exactly as R9 expected rather than
+narrowing it: the optimizer's average 57.6% monthly turnover sums to 15.06
+points of per-fold cost rates over the 126 folds (equal-weight pays ~0),
+but because each fold's cost compounds against a capital base already
+reduced by every earlier fold's cost, the actual compounded-return effect
+is far larger than that simple sum - +308.996% gross pulled down to
++252.204% net, a 56.79-point drop, not 15.06. The t-stat on the mean excess
+return moves from -0.50 to -0.86 - still nowhere near conventional
+significance, same "no real signal" conclusion, now on a realistic-cost
+basis instead of a cost-free one. On the original 3-ticker
+universe the effect is sharper: the optimizer's nominal pre-cost win
+(-16.73% vs -17.33%, Day 6) flips sign once costed (-18.02% vs -17.33%),
+because that universe's near-corner-solution tangency weights swing hard
+fold to fold.
+
+Day 5's own turnover-penalty machinery (`optimizer.constraints.constrained_min_variance`,
+a quadratic penalty on squared distance from a reference portfolio) was
+built but never wired into the walk-forward. `optimizer.oos --turnover-lambda`
+now reuses it directly: each fold, if the plain tangency solve succeeds,
+it re-solves for *the same expected return the tangency portfolio
+targeted* but penalized for moving away from the previous fold's realized
+weights, falling back to the plain tangency weights if that penalized
+solve is infeasible (mirroring the existing equal-weight fallback for an
+infeasible tangency solve). On the 29-name universe, `--turnover-lambda 5`
+cuts realized average turnover from 57.6% to **27.4%** and the summed
+per-fold cost rate from 15.06 to **7.17** points, narrowing (not closing)
+the after-cost gap to equal-weight (+385.98% vs +426.96%, t=+0.13 on the
+after-cost excess,
+up from -0.86 unpenalized - the penalty also changes which weights are
+held, so the gross number moves too, not just the cost: +422.06% gross at
+lambda=5 vs +309.00% unpenalized). Equal-weight still wins after costs at
+this lambda; Day 5's own caveat still applies here - the penalty is a quadratic
+(L2) proxy for the non-differentiable L1 turnover cost that actually
+matters, so a larger `--turnover-lambda` is not guaranteed to keep reducing
+realized L1 turnover monotonically, only checked empirically at this one
+setting.
+
+Verified: 199/199 tests pass (15 new: the blended cost-rate derivation,
+per-fold turnover/cost wiring against an explicit previous-weights vector,
+the equal-weight leg's turnover staying exactly zero, the
+`--turnover-lambda` requiring `tickers`, a spy test confirming
+`constrained_min_variance` is actually called with the right
+`turnover_lambda`, determinism, and the net-vs-gross aggregation) -
+`uv run --with-editable . --with pytest pytest` (bare `pytest` on this
+sandbox still can't import `numpy` at all, the same pre-existing local-only
+quirk Day 13/LESSONS.md already documented, unrelated to this repo's own
+packaging). `python -m optimizer.oos` run by hand on both the 3-ticker and
+29-name fixtures, with and without `--turnover-lambda`, at the numbers
+quoted above; both runs confirmed byte-for-byte deterministic across repeat
+invocations.
+
 ## Limitations and what would make me wrong
 
 - Mean-variance is famously sensitive to expected returns, which are estimated with large error. Small input changes move weights a lot. Day 1 measured this directly: all three tickers' annualized mean estimates have |t| < 2, i.e. none is statistically distinguishable from zero over this sample.
@@ -546,6 +630,9 @@ can't collect this repo at all, pre-existing P17, unrelated, scoped to Day
 - Day 4's shrinkage comparison is genuine but undramatic on this specific universe: with only 3 assets and 500 days of history (T >> n), the sample covariance was already well-conditioned, so shrinkage intensity (7.1%) and the resulting weight moves are small. That is the honest result for this fixture set, not a demonstration that shrinkage doesn't matter - the synthetic stress tests in `tests/test_shrinkage.py` show the same formula shrinking to >99% or falling toward 0% at the extremes the theory predicts. A wider universe (Day 5+ and later projects target ~10-20 names) is where this day's centrepiece finding would actually bite.
 - Day 7's `optimizer.audit` is scoped to `optimizer.oos` only - the one module in this repo with a time axis to leak across. It is not a general correctness audit of `frontier`/`tangency`/`shrinkage`/`constraints` (those are single-window static solves, checked instead by their own convexity/closed-form/monotonicity tests), and it says nothing about whether the walk-forward *result* is good, only that it is honestly out-of-sample. Day 7's frontier chart and weights table are a different view of numbers Days 2-3 already reported, not a new finding.
 - The v0.4 sizing contract's sector cap is, on this repo's real 3-ticker universe, mathematically identical to a plain position limit on RELIANCE.NS alone (every ticker sits in its own sector, the same degeneracy Day 5 already found) - it does not exercise sector caps as a genuine multi-name diversification constraint here, only in `tests/test_sizing.py`'s synthetic multi-sector case. And the sector-capped portfolio's Sharpe ratio (-0.83) is worse, not better, than the unconstrained corner solution's (-0.30): forcing weight into TATACHEM.NS to satisfy the cap adds exposure to a second noisy, negative-mean estimate rather than diversifying away risk. The `weight: 0.5` this repo ships to STOCKSTALKER is an honest output of that constrained optimization, not a claim that 50/50 RELIANCE/TATACHEM is a good portfolio.
+- Day 40's equal-weight leg always has zero modeled turnover cost: this walk-forward resets equal-weight to exactly 1/n every fold rather than tracking within-period price drift, so there is never a drifted position to rebalance back from. A real book holding equal-weight would pay something to pull drifted weights back to 1/n each period - smaller than the optimizer's turnover, per the original R9 critique, but not literally zero the way this model reports it. Simulating that drift would need a day-by-day (not fold-level) weight path, out of scope for this day's fix.
+- Day 40's `--turnover-lambda` reuses Day 5's quadratic (L2) turnover penalty, which Day 5 already found does not monotonically reduce the L1 turnover anyone managing a real book actually cares about. It helped at the one setting tested here (`--turnover-lambda 5` on the 29-name universe: realized turnover 57.6% → 27.4%), but that is an empirical result at that lambda and universe, not a proof it always helps - check the realized L1 turnover printed by the CLI rather than assuming a larger lambda is always better.
+- Day 40's transaction-cost schedule (STT + stamp duty + slippage, reused from STOCKSTALKER's R8) assumes every fold's rebalance executes at that flat percentage of traded value, the same simplification R8 already carries in STOCKSTALKER's own backtest - no bid-ask spread, no market-impact cost that would grow with the 57.6%-of-book average trade size, and no distinction between a liquid large-cap and a thinner name within the 29-name universe.
 
 ## Checkpoint log
 
