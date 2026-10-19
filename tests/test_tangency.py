@@ -10,6 +10,7 @@ from optimizer.tangency import (
     max_sharpe_weights_long_only,
     max_sharpe_weights_unconstrained,
     sharpe_ratio,
+    sweep_risk_free_rates,
 )
 
 TICKERS = ["RELIANCE.NS", "TATACHEM.NS", "CROMPTON.NS"]
@@ -181,3 +182,30 @@ def test_capital_market_line_is_linear_in_vol():
 def test_capital_market_line_rejects_zero_tangency_vol():
     with pytest.raises(ValueError):
         capital_market_line(risk_free=0.05, tangency_return=0.15, tangency_vol=0.0)
+
+
+def test_sweep_risk_free_rates_runs_one_result_per_rate():
+    results = sweep_risk_free_rates(TICKERS, [0.0, 0.04, 0.07], fixtures_dir="fixtures/ohlcv")
+    assert len(results) == 3
+    assert [r["risk_free"] for r in results] == [0.0, 0.04, 0.07]
+
+
+def test_sweep_risk_free_rates_matches_single_run_rate_by_rate():
+    from optimizer.tangency import run
+
+    results = sweep_risk_free_rates(TICKERS, [0.0, 0.065], fixtures_dir="fixtures/ohlcv")
+    for rf, result in zip([0.0, 0.065], results):
+        single = run(TICKERS, rf, fixtures_dir="fixtures/ohlcv")
+        np.testing.assert_allclose(result["long_only"].weights, single["long_only"].weights)
+        assert result["long_only"].sharpe == pytest.approx(single["long_only"].sharpe)
+
+
+def test_sweep_risk_free_rates_sharpe_sign_is_robust_on_real_universe_across_plausible_rates():
+    # Every asset's sample mean is negative on this universe (Day 1), so the
+    # long-only tangency portfolio's Sharpe should stay negative (downward-
+    # sloping CML) across every plausible nonnegative risk-free rate, not
+    # just at rf=0 - a higher rf only makes every excess return more negative.
+    results = sweep_risk_free_rates(TICKERS, [0.0, 0.04, 0.07], fixtures_dir="fixtures/ohlcv")
+    for result in results:
+        assert result["long_only"].success
+        assert result["long_only"].sharpe < 0

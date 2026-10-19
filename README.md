@@ -4,13 +4,13 @@ Educational research on historical data. Not investment advice. Not a SEBI-regis
 
 **Question:** does mean-variance optimization actually beat a naive equal-weight portfolio out-of-sample, and does that answer hold once the universe is bigger than 3 names?
 **Method:** walk-forward (non-overlapping rolling-window) long-only max-Sharpe tangency on a Ledoit-Wolf shrunk covariance, scored against equal-weight, rerun on both a 3-ticker and a 29-name large-cap universe.
-**Finding (Day 9, cost-adjusted Day 40):** widening the universe fixes the 3-ticker single-name corner solution (9/11 folds → 1/126), but the walk-forward bottom line flips the other way — equal-weight now beats the optimizer (+426.96% vs. +309.00% compounded, 126 folds) — and neither result is statistically significant (t=-0.50). Charging the same transaction-cost schedule the rest of this portfolio already treats as decisive (R9) widens the gap, not narrows it: the optimizer's 57.6% average monthly turnover (equal-weight's is ~0, since it is reset to exactly 1/n every fold) pulls its compounded return down to +252.20% after costs — a much bigger drop than the 15.06-point sum of per-fold cost rates would suggest, because costs compound against a smaller capital base in every later fold.
+**Finding (Day 9, cost-adjusted Day 40, sensitivity-checked Day 43):** widening the universe fixes the 3-ticker single-name corner solution (9/11 folds → 1/126), but the walk-forward bottom line flips the other way — equal-weight now beats the optimizer (+426.96% vs. +309.00% compounded, 126 folds) — and neither result is statistically significant (t=-0.50). Charging the same transaction-cost schedule the rest of this portfolio already treats as decisive (R9) widens the gap, not narrows it: the optimizer's 57.6% average monthly turnover (equal-weight's is ~0, since it is reset to exactly 1/n every fold) pulls its compounded return down to +252.20% after costs — a much bigger drop than the 15.06-point sum of per-fold cost rates would suggest, because costs compound against a smaller capital base in every later fold. Day 43 swept the risk-free rate (0/4/7%) and three more train/test window pairings: equal-weight wins at every one — robust, not a one-setting artifact — though a shorter 126-day training window widens the gap enough to cross conventional significance (t=-2.09).
 **Chart:** `outputs/` frontier chart (tangency point + capital market line) from `optimizer.report`.
 **Reproduce:** `python -m optimizer.report --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS`
 
 Mean-variance optimization over an NSE universe, with the fragility of the inputs treated as the main finding rather than a footnote.
 
-**Status:** Complete on a 3-stock universe (Sep 2026), reran on a 29-name large-cap universe (17 Oct 2026, Day 9), and cost-adjusted (18 Oct 2026, Day 40). Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
+**Status:** Complete on a 3-stock universe (Sep 2026), reran on a 29-name large-cap universe (17 Oct 2026, Day 9), cost-adjusted (18 Oct 2026, Day 40), and sensitivity-checked for risk-free rate and window pairing (19 Oct 2026, Day 43). Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
 
 *Educational research on historical data. Not investment advice. Not a SEBI-registered research analyst.*
 
@@ -46,6 +46,8 @@ python -m optimizer.constraints --tickers TICKER1.NS,TICKER2.NS,TICKER3.NS --tar
     --max-position 0.6 --turnover-lambda 50 --prev-weights 0.2,0.3,0.5
 python -m optimizer.oos --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS \
     --train-window 252 --test-window 21 --turnover-lambda 5
+python -m optimizer.tangency --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS --risk-free-rate-sweep 0.0,0.04,0.07
+python -m optimizer.oos --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS --risk-free-rate-sweep 0.0,0.04,0.07
 python -m optimizer.report --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS --risk-free-rate 0.065
 python -m optimizer.audit --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS
 python -m optimizer.sizing --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS --sector-cap 0.5 \
@@ -65,9 +67,9 @@ single name; `--turnover-lambda` penalizes squared distance from
 covariance against a Ledoit-Wolf shrinkage estimate, and reports how far the
 global minimum-variance and long-only tangency weights move between the two.
 
-`optimizer.stats` (Day 1) is the returns/covariance diagnostic below; `optimizer.frontier` (Day 2) solves the minimum-variance portfolio for one target return, long-only and long/short; `optimizer.tangency` (Day 3) solves the maximum-Sharpe tangency portfolio and reports the capital market line. `--risk-free-rate` defaults to `0.0` - there is no committed risk-free-rate fixture and no live FRED/RBI fetch available offline, so pass a real annualized rate explicitly if you have one.
+`optimizer.stats` (Day 1) is the returns/covariance diagnostic below; `optimizer.frontier` (Day 2) solves the minimum-variance portfolio for one target return, long-only and long/short; `optimizer.tangency` (Day 3) solves the maximum-Sharpe tangency portfolio and reports the capital market line. `--risk-free-rate` defaults to `0.0` - there is no committed risk-free-rate fixture and no live FRED/RBI fetch available offline, so pass a real annualized rate explicitly if you have one. `--risk-free-rate-sweep` (Day 43, R10) reruns the long-only tangency portfolio at several comma-separated rates instead and reports whether the capital market line's slope sign holds across all of them.
 
-`optimizer.oos` (Day 6) walks a fixed-length training window forward through the fixture history, solving the long-only max-Sharpe/Ledoit-Wolf tangency portfolio on each window and holding it (no rebalancing) through the following test window, scored against equal-weight held the same way. `--train-window`/`--test-window` are in trading days (default 252/21, roughly one year training, one month holding). Day 40 adds a transaction-cost term (STOCKSTALKER's own STT + stamp duty + slippage schedule, R9) on each fold's L1 turnover from the previous fold's held weights, reporting gross and cost-adjusted compounded return/t-stat side by side; `--turnover-lambda` reuses `optimizer.constraints`'s turnover-penalized solve to re-target the same expected return with less rebalancing.
+`optimizer.oos` (Day 6) walks a fixed-length training window forward through the fixture history, solving the long-only max-Sharpe/Ledoit-Wolf tangency portfolio on each window and holding it (no rebalancing) through the following test window, scored against equal-weight held the same way. `--train-window`/`--test-window` are in trading days (default 252/21, roughly one year training, one month holding). Day 40 adds a transaction-cost term (STOCKSTALKER's own STT + stamp duty + slippage schedule, R9) on each fold's L1 turnover from the previous fold's held weights, reporting gross and cost-adjusted compounded return/t-stat side by side; `--turnover-lambda` reuses `optimizer.constraints`'s turnover-penalized solve to re-target the same expected return with less rebalancing. `--risk-free-rate-sweep` (Day 43, R10) reruns the whole walk-forward at several rates and reports whether the after-cost optimizer-vs-equal-weight sign holds across all of them.
 
 `optimizer.report` (Day 7) writes a long-only frontier chart (with the tangency point and capital market line) to `outputs/` and prints the min-variance and max-Sharpe weights as an aligned terminal table; pass `--no-chart` to skip the PNG. `optimizer.audit` (Day 7) is the `ml-pipeline-audit` pass: checks `optimizer.oos`'s walk-forward folds for boundary gaps/overlaps and for a fold's decision depending on data after its own test window, printing a summary and writing `outputs/audit_<date>.md`; exits non-zero if either check finds a violation.
 
@@ -612,6 +614,75 @@ packaging). `python -m optimizer.oos` run by hand on both the 3-ticker and
 quoted above; both runs confirmed byte-for-byte deterministic across repeat
 invocations.
 
+**Day 43 - risk-free-rate and train/test-window sensitivity (R10, hub
+CRITIQUES.md).** R10's critique of every earlier day: the risk-free rate
+(`DEFAULT_RISK_FREE_RATE = 0.0`) and the 252/21-day train/test pairing
+behind the Day 9/40 headline were both asserted once and never
+sensitivity-swept, unlike every other assumption this README stress-tests
+(shrinkage at the extremes - Day 4, split-half mean stability - Day 1,
+universe size - Day 9). `optimizer.tangency` and `optimizer.oos` both gain
+a `--risk-free-rate-sweep` flag (a comma-separated list of rates, reusing
+the existing single-rate code path once per rate rather than approximating,
+since `mu - rf` enters both the closed-form and the numerical solve
+nonlinearly) that reruns the whole pipeline at each rate and reports
+whether the qualitative sign holds.
+
+*Risk-free rate.* On the original 3-ticker universe (every sample mean
+negative, Day 1), the long-only tangency portfolio's Sharpe gets *more*
+negative as the assumed rate rises - Sharpe -0.3094 at rf=0%, -0.5022 at
+4%, -0.6468 at 7% - so the downward-sloping capital market line (Day 3) is
+robust across every plausible rate, as expected once the mechanism is
+understood (a positive rf only makes every excess return `mu - rf` more
+negative here). On the 29-name universe (Day 9, mostly positive means) the
+sign runs the other way but is equally robust: Sharpe +1.1007 at rf=0%,
++0.8737 at 4%, +0.7193 at 7% - upward-sloping at every rate, though the
+magnitude nearly halves from 0% to 7%, which matters if this portfolio's
+Sharpe is ever compared against another asset priced off a different rate
+assumption. Feeding the same sweep through `optimizer.oos` on the 29-name
+universe (default 252/21-day windows) shows the headline optimizer-vs-equal-weight
+sign (Day 40: equal-weight wins after costs) is unchanged at every swept
+rate - equal-weight's compounded return is identical at all three rates
+(**+426.9614%**, since its 1/n weights never depend on rf at all), while
+the optimizer's net compounded return rises with rf (**+252.20%** at 0% to
+**+284.92%** at 7%, since a higher rf tilts every fold's tangency solve away
+from the lowest-mean names) without ever closing the gap - the after-cost
+t-stat moves from -0.86 to -0.56, narrowing but staying far short of
+conventional significance.
+
+*Train/test window pairing.* Day 9/40's headline numbers all come from one
+pairing (252-day train, 21-day test). Three additional pairings on the same
+29-name universe, cost-adjusted the same way as Day 40:
+
+| train/test (days) | folds | optimizer (net) | equal-weight (net) | gap (pp) | t-stat (net) |
+|---|---|---|---|---|---|
+| 252/21 (Day 40, headline) | 126 | +252.20% | +426.96% | 174.8 | -0.86 |
+| 126/21 | 132 | +116.32% | +382.37% | 266.1 | **-2.09** |
+| 252/63 | 42 | +242.55% | +417.38% | 174.8 | -0.89 |
+| 378/21 | 120 | +174.10% | +349.24% | 175.1 | -1.05 |
+
+Equal-weight wins at every pairing tested - the sign is robust, same
+conclusion as the risk-free-rate sweep. The gap's *magnitude* is also
+fairly stable at three of the four pairings (~175 percentage points), which
+is itself informative: lengthening the test window (63d) or the training
+window (378d) barely moves the result. The one pairing that moves is
+shortening the training window to 126 days, which widens the gap to 266pp
+and is the only one of the four to cross conventional significance
+(t=-2.09) - half the training data means noisier mean/covariance estimates
+feeding the tangency solve each fold, which (per Day 40's turnover finding)
+means more corner-solution weight swings, more realized turnover, and more
+cost drag, not less. This is reported as a genuine finding about estimation
+windows, not evidence the headline 252/21 pairing was cherry-picked to make
+the optimizer look better than a shorter window would - if anything, 252/21
+is a *more* favorable pairing for the optimizer than 126/21.
+
+Verified: 211/211 tests pass (12 new: `sweep_risk_free_rates` in both
+`optimizer.tangency` and `optimizer.oos` matches a plain per-rate `run()`
+call exactly, passes `turnover_lambda` through, and the real-universe sign
+checks above; CLI tests for `--risk-free-rate-sweep` on both modules,
+including that it overrides a simultaneously-passed `--risk-free-rate` and
+is deterministic). Both CLIs were run by hand at the rates and window pairs
+quoted above against the real 3-ticker and 29-name fixtures.
+
 ## Limitations and what would make me wrong
 
 - Mean-variance is famously sensitive to expected returns, which are estimated with large error. Small input changes move weights a lot. Day 1 measured this directly: all three tickers' annualized mean estimates have |t| < 2, i.e. none is statistically distinguishable from zero over this sample.
@@ -626,7 +697,8 @@ invocations.
 - Day 5's sector caps are implemented and tested (a synthetic 4-asset/2-sector universe in `tests/test_constraints.py` shows one genuinely binding differently from a position limit), but on this repo's real 3-ticker universe every ticker is in its own sector, so a sector cap here is mathematically identical to a plain position limit - not a distinct constraint on this fixture set, and the CLI says so.
 - Day 5's turnover penalty is quadratic (L2), not the more standard L1 turnover cost, because L1 is non-differentiable at zero and SLSQP needs a smooth objective. Squared-L2 distance to the reference portfolio provably shrinks as the penalty coefficient grows; L1 distance - the number anyone actually managing turnover cares about - does not always move the same way. A concrete real-fixture case moves L1 turnover from 29.50% to 30.72% when the penalty is turned on, i.e. slightly worse by the metric that matters, while L2 distance improved as promised. Report L1, not the penalty value, as "the turnover number" if this module is ever used for real.
 - Day 3's unconstrained tangency portfolio does not exist as a finite full-investment portfolio for this universe (every asset's sample mean is negative, so `sum(inv(cov)(mu-rf))` is negative at any realistic risk-free rate) - `optimizer.tangency` reports this as undefined rather than returning a number. The long-only tangency portfolio is well-defined but has negative Sharpe (-0.31 at rf=0), so the capital market line built from it is downward-sloping: this universe offers no long-only allocation that beats holding cash on a risk-adjusted basis.
-- The risk-free rate has no committed fixture and no live FRED/RBI fetch is available in this sandbox, so `optimizer.tangency` defaults `--risk-free-rate` to 0.0 rather than a fabricated "real" figure. Every Sharpe ratio and CML number above is only as meaningful as that assumption - pass a real rate via the flag if one is available.
+- The risk-free rate has no committed fixture and no live FRED/RBI fetch is available in this sandbox, so `optimizer.tangency` defaults `--risk-free-rate` to 0.0 rather than a fabricated "real" figure. Every Sharpe ratio and CML number above is only as meaningful as that assumption - pass a real rate via the flag if one is available. Day 43 swept 0/4/7% and found the qualitative CML-slope and optimizer-vs-equal-weight signs unchanged at every rate on both universes - but the magnitude moves (the 29-name tangency Sharpe nearly halves from rf=0% to rf=7%), so a rate sweep is still worth rerunning if a materially different real rate becomes available, not a one-time check.
+- Day 9/40's headline walk-forward numbers come from one train/test window pairing (252/21 days). Day 43 reran three more pairings on the same 29-name universe and found equal-weight wins at every one, but not by the same margin: shortening the training window to 126 days (vs the headline 252) widens the after-cost gap from 175 to 266 percentage points and is the only pairing of the four that reaches conventional statistical significance (t=-2.09 vs -0.86 to -1.05 for the others) - a shorter estimation window means noisier inputs feeding the tangency solve, not a more favorable test for the optimizer. Four pairings is still a small, hand-picked sample of the pairing space, not an exhaustive grid search.
 - Day 4's shrinkage comparison is genuine but undramatic on this specific universe: with only 3 assets and 500 days of history (T >> n), the sample covariance was already well-conditioned, so shrinkage intensity (7.1%) and the resulting weight moves are small. That is the honest result for this fixture set, not a demonstration that shrinkage doesn't matter - the synthetic stress tests in `tests/test_shrinkage.py` show the same formula shrinking to >99% or falling toward 0% at the extremes the theory predicts. A wider universe (Day 5+ and later projects target ~10-20 names) is where this day's centrepiece finding would actually bite.
 - Day 7's `optimizer.audit` is scoped to `optimizer.oos` only - the one module in this repo with a time axis to leak across. It is not a general correctness audit of `frontier`/`tangency`/`shrinkage`/`constraints` (those are single-window static solves, checked instead by their own convexity/closed-form/monotonicity tests), and it says nothing about whether the walk-forward *result* is good, only that it is honestly out-of-sample. Day 7's frontier chart and weights table are a different view of numbers Days 2-3 already reported, not a new finding.
 - The v0.4 sizing contract's sector cap is, on this repo's real 3-ticker universe, mathematically identical to a plain position limit on RELIANCE.NS alone (every ticker sits in its own sector, the same degeneracy Day 5 already found) - it does not exercise sector caps as a genuine multi-name diversification constraint here, only in `tests/test_sizing.py`'s synthetic multi-sector case. And the sector-capped portfolio's Sharpe ratio (-0.83) is worse, not better, than the unconstrained corner solution's (-0.30): forcing weight into TATACHEM.NS to satisfy the cap adds exposure to a second noisy, negative-mean estimate rather than diversifying away risk. The `weight: 0.5` this repo ships to STOCKSTALKER is an honest output of that constrained optimization, not a claim that 50/50 RELIANCE/TATACHEM is a good portfolio.

@@ -229,7 +229,33 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--cml-points", type=int, default=11, help="number of points to report along the capital market line (default: 11)"
     )
+    parser.add_argument(
+        "--risk-free-rate-sweep",
+        default=None,
+        help=(
+            "comma-separated annualized risk-free rates, e.g. 0.0,0.04,0.07 (R10, hub CRITIQUES.md). "
+            "When given, overrides --risk-free-rate: reruns the long-only tangency portfolio at each "
+            "rate and reports whether the CML-slope sign is robust to the choice, instead of a single-rate report"
+        ),
+    )
     return parser
+
+
+def sweep_risk_free_rates(
+    tickers: list[str], risk_free_rates: list[float], fixtures_dir: str, cml_points: int = 11
+) -> list[dict]:
+    """Rerun :func:`run` at each of several risk-free rates (R10, hub CRITIQUES.md).
+
+    The risk-free rate is an unfetched assumption in this sandbox (see the
+    module docstring), so every earlier day reported one number (``rf=0.0``
+    by default) and never checked whether a different, still-plausible
+    choice would change the qualitative finding - whether the long-only
+    tangency portfolio's Sharpe ratio (and so the capital market line's
+    slope) keeps the same sign. This reruns the whole pipeline once per
+    rate rather than approximating, since ``mu - rf`` enters both the
+    closed-form and the numerical solve nonlinearly.
+    """
+    return [run(tickers, rf, fixtures_dir, cml_points) for rf in risk_free_rates]
 
 
 def run(tickers: list[str], risk_free: float, fixtures_dir: str, cml_points: int = 11) -> dict:
@@ -301,10 +327,46 @@ def _format_report(result: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_sweep_report(tickers: list[str], results: list[dict]) -> str:
+    lines = [f"tickers: {', '.join(tickers)}", "risk-free-rate sweep (R10, hub CRITIQUES.md):", ""]
+    lines.append(f"  {'rf':>8}  {'long-only Sharpe':>17}  {'CML slope':>10}  weights")
+    signs = []
+    for result in results:
+        lo = result["long_only"]
+        rf = result["risk_free"]
+        if not lo.success:
+            lines.append(f"  {rf:>+8.4%}  {'n/a':>17}  {'n/a':>10}  (infeasible)")
+            continue
+        slope = "downward" if lo.sharpe < 0 else "upward"
+        signs.append(lo.sharpe < 0)
+        weight_str = ", ".join(f"{t}={w:+.3f}" for t, w in zip(tickers, lo.weights))
+        lines.append(f"  {rf:>+8.4%}  {lo.sharpe:>+17.4f}  {slope:>10}  {weight_str}")
+    lines.append("")
+
+    if not signs:
+        lines.append("verdict: no rate in the sweep produced a feasible long-only tangency portfolio")
+    elif all(signs) or not any(signs):
+        direction = "downward" if signs[0] else "upward"
+        lines.append(
+            f"verdict: the capital market line's {direction}-sloping sign is robust across every rate swept"
+        )
+    else:
+        lines.append(
+            "verdict: the capital market line's slope sign is NOT robust - it flips somewhere in this sweep, "
+            "so a single assumed risk-free rate can change the qualitative finding"
+        )
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    if args.risk_free_rate_sweep:
+        rates = [float(r.strip()) for r in args.risk_free_rate_sweep.split(",") if r.strip()]
+        results = sweep_risk_free_rates(tickers, rates, args.fixtures_dir, args.cml_points)
+        print(_format_sweep_report(tickers, results))
+        return 0
     result = run(tickers, args.risk_free_rate, args.fixtures_dir, args.cml_points)
     print(_format_report(result))
     return 0

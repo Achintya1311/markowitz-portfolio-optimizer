@@ -334,6 +334,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="quadratic turnover-penalty coefficient, reused from optimizer.constraints "
         "(default: 0.0, plain unconstrained tangency weights every fold)",
     )
+    parser.add_argument(
+        "--risk-free-rate-sweep",
+        default=None,
+        help=(
+            "comma-separated annualized risk-free rates, e.g. 0.0,0.04,0.07 (R10, hub CRITIQUES.md). "
+            "When given, overrides --risk-free-rate: reruns the whole walk-forward at each rate and "
+            "reports whether the after-cost optimizer-vs-equal-weight sign is robust to the choice, "
+            "instead of a single-rate report"
+        ),
+    )
     return parser
 
 
@@ -383,6 +393,59 @@ def run(
         unused_days=n_days - used_days,
         turnover_lambda=turnover_lambda,
     )
+
+
+def sweep_risk_free_rates(
+    tickers: list[str],
+    fixtures_dir: str,
+    train_window: int,
+    test_window: int,
+    risk_free_rates: list[float],
+    turnover_lambda: float = 0.0,
+) -> list[OOSResult]:
+    """Rerun the walk-forward test at each of several risk-free rates (R10, hub CRITIQUES.md).
+
+    The risk-free rate enters every fold's tangency solve (``mu - rf``), so a
+    different assumed rate can pick different weights each fold, not just
+    rescale the Sharpe ratio reported in :mod:`optimizer.tangency`. This
+    checks whether the headline optimizer-vs-equal-weight sign survives that,
+    the same way Day 9 checked whether it survived a wider universe.
+    """
+    return [
+        run(tickers, fixtures_dir, train_window, test_window, rf, turnover_lambda)
+        for rf in risk_free_rates
+    ]
+
+
+def _format_sweep_report(results: list[OOSResult]) -> str:
+    first = results[0]
+    lines = [
+        f"tickers: {', '.join(first.tickers)}",
+        f"risk-free-rate sweep (R10, hub CRITIQUES.md): train_window={first.train_window}d   "
+        f"test_window={first.test_window}d   folds={len(first.folds)}",
+        "",
+        f"  {'rf':>8}  {'optimizer (net)':>16}  {'equal-weight (net)':>19}  {'sign':>14}  {'t-stat (net)':>12}",
+    ]
+    signs = []
+    for result in results:
+        opt = result.optimizer_compounded_return_net
+        eq = result.equal_weight_compounded_return_net
+        sign = "optimizer" if opt > eq else "equal-weight"
+        signs.append(opt > eq)
+        t_stat = result.t_stat_excess_net
+        t_str = f"{t_stat:+.2f}" if t_stat is not None else "n/a"
+        lines.append(f"  {result.risk_free:>+8.4%}  {opt:>+16.4%}  {eq:>+19.4%}  {sign:>14}  {t_str:>12}")
+    lines.append("")
+
+    if all(signs) or not any(signs):
+        winner = "optimizer" if signs[0] else "equal-weight"
+        lines.append(f"verdict: {winner} wins the after-cost compounded-return comparison at every rate swept")
+    else:
+        lines.append(
+            "verdict: the after-cost optimizer-vs-equal-weight sign is NOT robust - it flips somewhere in "
+            "this sweep, so a single assumed risk-free rate can change which side the headline finding favors"
+        )
+    return "\n".join(lines)
 
 
 def _format_report(result: OOSResult) -> str:
@@ -502,6 +565,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    if args.risk_free_rate_sweep:
+        rates = [float(r.strip()) for r in args.risk_free_rate_sweep.split(",") if r.strip()]
+        results = sweep_risk_free_rates(
+            tickers, args.fixtures_dir, args.train_window, args.test_window, rates, args.turnover_lambda
+        )
+        print(_format_sweep_report(results))
+        return 0
     result = run(
         tickers, args.fixtures_dir, args.train_window, args.test_window, args.risk_free_rate, args.turnover_lambda
     )

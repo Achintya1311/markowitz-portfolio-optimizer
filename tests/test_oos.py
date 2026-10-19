@@ -10,6 +10,7 @@ from optimizer.oos import (
     TURNOVER_COST_RATE,
     run,
     run_fold,
+    sweep_risk_free_rates,
     total_simple_returns,
     walk_forward_folds,
 )
@@ -336,3 +337,28 @@ def test_oos_result_cost_adjustment_can_widen_equal_weights_margin():
     assert result.optimizer_compounded_return_net < result.equal_weight_compounded_return_net
     assert result.total_optimizer_cost > 0.0
     assert result.total_equal_weight_cost == 0.0
+
+
+# --- sweep_risk_free_rates (R10, hub CRITIQUES.md) ---
+
+
+def test_sweep_risk_free_rates_runs_one_result_per_rate():
+    results = sweep_risk_free_rates(TICKERS, str(FIXTURES_DIR), train_window=252, test_window=21, risk_free_rates=[0.0, 0.04, 0.07])
+    assert len(results) == 3
+    assert [r.risk_free for r in results] == [0.0, 0.04, 0.07]
+
+
+def test_sweep_risk_free_rates_matches_single_run_rate_by_rate():
+    results = sweep_risk_free_rates(TICKERS, str(FIXTURES_DIR), train_window=252, test_window=21, risk_free_rates=[0.0, 0.065])
+    for rf, result in zip([0.0, 0.065], results):
+        single = run(TICKERS, str(FIXTURES_DIR), train_window=252, test_window=21, risk_free=rf)
+        assert result.optimizer_compounded_return_net == pytest.approx(single.optimizer_compounded_return_net)
+        assert result.equal_weight_compounded_return_net == pytest.approx(single.equal_weight_compounded_return_net)
+
+
+def test_sweep_risk_free_rates_passes_through_turnover_lambda():
+    results = sweep_risk_free_rates(
+        TICKERS, str(FIXTURES_DIR), train_window=252, test_window=21, risk_free_rates=[0.0], turnover_lambda=5.0
+    )
+    assert results[0].turnover_lambda == 5.0
+    assert results[0].n_turnover_penalty_used > 0
