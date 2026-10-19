@@ -73,7 +73,7 @@ global minimum-variance and long-only tangency weights move between the two.
 
 `optimizer.sizing` (integration day) is the v0.4 contract to the spine: the same Ledoit-Wolf shrunk covariance Day 4 built, fed into a long-only max-Sharpe tangency solve with Day 5's sector-cap constraint added on top, because the raw unconstrained tangency portfolio Days 3/4/6/7 already found (100% RELIANCE.NS) is not a position size any real book would take. `--sector-cap` (default 50%) is a uniform per-sector weight cap; `--contract`/`--contract-ticker` write the `{"sizing": {"weight", "method", "constraint_binding"}}` block STOCKSTALKER reads.
 
-Runs offline against committed fixtures by default. Live data needs a key in `.env` (see `.env.example`); the fixture path is the default so nothing blocks on network access.
+This repo is offline-only, against committed fixtures. No code here reads an API key or performs any live fetch; there is no live-data path. The one real live path in this repo is `scripts/fetch_largecaps.py` (bare `yfinance`, no key), which runs through `.github/workflows/fetch-largecaps.yml` and commits the refreshed fixture back - it is not invoked by any `optimizer.*` command above.
 
 ## Findings
 
