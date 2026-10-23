@@ -675,6 +675,16 @@ windows, not evidence the headline 252/21 pairing was cherry-picked to make
 the optimizer look better than a shorter window would - if anything, 252/21
 is a *more* favorable pairing for the optimizer than 126/21.
 
+**Multiple-comparisons caveat.** The rate sweep (3 values) and this window
+sweep (4 pairings) together are at least 3 x 4 = 12 cells looked at across
+Day 40/43, not one pre-registered test. One cell out of that many crossing
+conventional significance (t=-2.09) is close to what chance alone predicts
+at a ~5%-per-look false-positive rate under the null, so on its own it is
+weak evidence, not an independent confirmation that the 126-day window is
+special - the same multiple-comparisons exposure the lab's DSR/PBO checks
+exist to guard against (`PLAN.md` §3). It does not change the qualitative
+conclusion: equal-weight wins at every rate and every pairing tested.
+
 Verified: 211/211 tests pass (12 new: `sweep_risk_free_rates` in both
 `optimizer.tangency` and `optimizer.oos` matches a plain per-rate `run()`
 call exactly, passes `turnover_lambda` through, and the real-universe sign
