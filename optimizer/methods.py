@@ -1,0 +1,151 @@
+"""Walk-forward comparison of portfolio rules against equal weight, with drift-aware costs.
+
+    python -m optimizer.methods --universe largecap --train-window 252
+
+Criteria and candidates were fixed before any result was computed: ``docs/PREREG_methods_vs_equal_weight.md``.
+
+Every rule is evaluated on the same folds as ``optimizer.oos`` (rolling training window, non-overlapping hold)
+and costed the same way, with one correction: turnover is measured from the weights a portfolio has *drifted*
+to by the end of the previous hold, back to its new target. The older benchmark paid no turnover because it
+reset to 1/N with no drift; that favoured equal weight, so here equal weight pays for rebalancing too.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+import numpy as np
+
+from optimizer.covariance import sample_mean_cov
+from optimizer.oos import TURNOVER_COST_RATE, total_simple_returns, walk_forward_folds
+from optimizer.returns import annualize_cov, annualize_mean, load_returns_matrix
+from optimizer.shrinkage import global_min_variance_weights, ledoit_wolf_shrinkage
+from optimizer.tangency import max_sharpe_weights_long_only
+
+ROOT = Path(__file__).resolve().parent.parent
+LARGECAP_DIR = ROOT / "fixtures" / "ohlcv_largecap"
+FOLDS_PER_YEAR = 252 / 21
+
+
+def equal_weight(train: np.ndarray) -> np.ndarray:
+    n = train.shape[1]
+    return np.full(n, 1.0 / n)
+
+
+def min_variance(train: np.ndarray) -> np.ndarray:
+    _, cov = ledoit_wolf_shrinkage(train)
+    p = global_min_variance_weights(cov, long_only=True)
+    return p.weights if p.success else equal_weight(train)
+
+
+def inverse_vol(train: np.ndarray) -> np.ndarray:
+    inv = 1.0 / train.std(axis=0, ddof=1)
+    return inv / inv.sum()
+
+
+def blend(train: np.ndarray) -> np.ndarray:
+    return 0.5 * min_variance(train) + 0.5 * equal_weight(train)
+
+
+def max_sharpe(train: np.ndarray) -> np.ndarray:
+    """The repo's previous method, unchanged: long-only max-Sharpe on Ledoit-Wolf covariance, rf = 0."""
+    mu_daily, _ = sample_mean_cov(train)
+    _, cov = ledoit_wolf_shrinkage(train)
+    sol = max_sharpe_weights_long_only(annualize_mean(mu_daily), annualize_cov(cov), 0.0)
+    return sol.weights if sol.success else equal_weight(train)
+
+
+METHODS = {"equal_weight": equal_weight, "min_variance": min_variance, "inverse_vol": inverse_vol,
+           "blend_50_50": blend, "max_sharpe": max_sharpe}
+
+
+def drift(weights: np.ndarray, test_returns: np.ndarray) -> np.ndarray:
+    """Weights after a hold in which each asset earned its own total return and nothing was traded."""
+    grown = weights * (1.0 + test_returns)
+    return grown / grown.sum()
+
+
+def walk_forward(returns: np.ndarray, rule, train_window: int, test_window: int = 21, cost_rate: float = TURNOVER_COST_RATE) -> dict:
+    gross, net, turnover = [], [], []
+    held = None
+    for tr, te in walk_forward_folds(returns.shape[0], train_window, test_window):
+        target = rule(returns[tr])
+        prev = held if held is not None else target          # the very first allocation is not charged, for every rule alike
+        t = float(np.abs(target - prev).sum())
+        r = total_simple_returns(returns[te])
+        g = float(target @ r)
+        gross.append(g); net.append(g - cost_rate * t); turnover.append(t)
+        held = drift(target, r)
+    return {"gross": np.array(gross), "net": np.array(net), "turnover": np.array(turnover)}
+
+
+def summarize(net: np.ndarray, turnover: np.ndarray) -> dict:
+    eq = np.cumprod(1.0 + net)
+    peak = np.maximum.accumulate(np.r_[1.0, eq])[1:]
+    sd = float(net.std(ddof=1))
+    return {"compounded_net": float(eq[-1] - 1.0), "sharpe_net": float(net.mean() / sd * np.sqrt(FOLDS_PER_YEAR)) if sd else float("nan"),
+            "vol_annual": sd * float(np.sqrt(FOLDS_PER_YEAR)), "max_drawdown": float((eq / peak - 1.0).min()),
+            "avg_turnover": float(turnover.mean()), "n_folds": int(len(net))}
+
+
+def sharpe_diff_ci(a: np.ndarray, b: np.ndarray, reps: int = 5000, seed: int = 0) -> dict:
+    """95% interval for Sharpe(a) - Sharpe(b) from a stationary bootstrap over paired fold returns."""
+    from arch.bootstrap import StationaryBootstrap, optimal_block_length
+
+    x = np.column_stack([a, b])
+    blk = int(min(max(round(float(optimal_block_length(x)["stationary"].mean())), 1), 10))
+    ann = float(np.sqrt(FOLDS_PER_YEAR))
+    sh = lambda m: m[:, 0].mean() / m[:, 0].std(ddof=1) * ann - m[:, 1].mean() / m[:, 1].std(ddof=1) * ann
+    point = sh(x)
+    draws = np.array([sh(d[0][0]) for d in StationaryBootstrap(blk, x, seed=seed).bootstrap(reps)])
+    return {"diff": float(point), "lo": float(np.quantile(draws, 0.025)), "hi": float(np.quantile(draws, 0.975)), "block": blk}
+
+
+def run(returns: np.ndarray, train_window: int) -> dict:
+    res = {name: walk_forward(returns, rule, train_window) for name, rule in METHODS.items()}
+    out = {"train_window": train_window, "methods": {n: summarize(v["net"], v["turnover"]) for n, v in res.items()}}
+    ew = res["equal_weight"]["net"]
+    for n in METHODS:
+        if n != "equal_weight":
+            out["methods"][n]["sharpe_diff_vs_equal_weight"] = sharpe_diff_ci(res[n]["net"], ew)
+    return out
+
+
+def verdict(w252: dict, w126: dict, name: str = "min_variance") -> dict:
+    def core(r):
+        m, e = r["methods"][name], r["methods"]["equal_weight"]
+        return {"sharpe_ge_equal_weight": m["sharpe_net"] >= e["sharpe_net"],
+                "ci_not_entirely_below_zero": m["sharpe_diff_vs_equal_weight"]["hi"] >= 0.0,
+                "vol_lower": m["vol_annual"] < e["vol_annual"],
+                "drawdown_no_worse": m["max_drawdown"] >= e["max_drawdown"]}
+    c252, c126 = core(w252), core(w126)
+    out = {**c252, "turnover_le_20pct": w252["methods"][name]["avg_turnover"] <= 0.20, "holds_at_126d": all(c126.values())}
+    out["all_pass"] = all(out.values())
+    return out
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--fixtures-dir", default=str(LARGECAP_DIR))
+    ap.add_argument("--json", default=None)
+    a = ap.parse_args(argv)
+    tickers = sorted(p.stem.replace("_", ".") for p in Path(a.fixtures_dir).glob("*.csv"))
+    _, returns = load_returns_matrix(tickers, a.fixtures_dir)
+    w252, w126 = run(returns, 252), run(returns, 126)
+    out = {"n_assets": len(tickers), "w252": w252, "w126": w126, "verdict_min_variance": verdict(w252, w126)}
+    for label, r in (("252-day training window", w252), ("126-day training window", w126)):
+        print(f"\n{label}, {r['methods']['equal_weight']['n_folds']} folds, {len(tickers)} assets, costs {TURNOVER_COST_RATE:.4%} per unit turnover (drift-aware)")
+        print(f"  {'method':<14}{'net compounded':>15}{'net Sharpe':>11}{'vol':>8}{'max DD':>9}{'turnover':>10}   Sharpe diff vs EW (95% interval)")
+        for n, m in r["methods"].items():
+            d = m.get("sharpe_diff_vs_equal_weight")
+            ds = f"{d['diff']:+.2f} ({d['lo']:+.2f} to {d['hi']:+.2f})" if d else ""
+            print(f"  {n:<14}{m['compounded_net']:>+15.1%}{m['sharpe_net']:>11.2f}{m['vol_annual']:>8.1%}{m['max_drawdown']:>9.1%}{m['avg_turnover']:>10.1%}   {ds}")
+    print("\npre-registered verdict for min_variance:", json.dumps(out["verdict_min_variance"]))
+    if a.json:
+        Path(a.json).write_text(json.dumps(out, indent=1))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

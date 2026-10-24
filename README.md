@@ -5,6 +5,7 @@ Educational research on historical data. Not investment advice. Not a SEBI-regis
 **Question:** does mean-variance optimization actually beat a naive equal-weight portfolio out-of-sample, and does that answer hold once the universe is bigger than 3 names?
 **Method:** walk-forward (non-overlapping rolling-window) long-only max-Sharpe tangency on a Ledoit-Wolf shrunk covariance, scored against equal-weight, rerun on both a 3-ticker and a 29-name large-cap universe.
 **Finding (Day 9, cost-adjusted Day 40, sensitivity-checked Day 43):** widening the universe fixes the 3-ticker single-name corner solution (9/11 folds → 1/126), but the walk-forward bottom line flips the other way — equal-weight now beats the optimizer (+426.96% vs. +309.00% compounded, 126 folds) — and neither result is statistically significant (t=-0.50). Charging the same transaction-cost schedule the rest of this portfolio already treats as decisive (R9) widens the gap, not narrows it: the optimizer's 57.6% average monthly turnover (equal-weight's is ~0, since it is reset to exactly 1/n every fold) pulls its compounded return down to +252.20% after costs — a much bigger drop than the 15.06-point sum of per-fold cost rates would suggest, because costs compound against a smaller capital base in every later fold. Day 43 swept the risk-free rate (0/4/7%) and three more train/test window pairings: equal-weight wins at every one — robust, not a one-setting artifact — though a shorter 126-day training window widens the gap enough to cross conventional significance (t=-2.09).
+**Update (24 Oct 2026, pre-registered):** five portfolio rules were walk-forwarded on the same 126 folds with drift-aware costs (equal weight now pays to rebalance too), and none beats equal weight net of costs. Minimum variance, the pre-registered primary candidate, cuts volatility (13.9% vs 15.0%) and drawdown (-21.1% vs -24.0%) but gives up Sharpe (0.94 vs 1.13) and turns over 21% per fold, so it fails its criteria. Inverse volatility is statistically indistinguishable from 1/N (Sharpe difference -0.00, 95% interval -0.04 to +0.04) at the same low turnover. See the section below. Criteria written first: `docs/PREREG_methods_vs_equal_weight.md`. Reproduce: `python -m optimizer.methods`.
 **Chart:** `outputs/` frontier chart (tangency point + capital market line) from `optimizer.report`.
 **Reproduce:** `python -m optimizer.report --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS`
 
@@ -692,6 +693,26 @@ checks above; CLI tests for `--risk-free-rate-sweep` on both modules,
 including that it overrides a simultaneously-passed `--risk-free-rate` and
 is deterministic). Both CLIs were run by hand at the rates and window pairs
 quoted above against the real 3-ticker and 29-name fixtures.
+
+## Which rule, if any, beats equal weight? A pre-registered walk-forward (24 Oct 2026)
+
+The headline above says max-Sharpe loses to 1/N. The README already gives the cause: the sample mean feeding it is indistinguishable from zero, so it chases noise (54% turnover per fold). That is a finding about one estimator. This section asks the construction question properly: do the rules that need no expected-return input earn a place?
+
+**Setup.** 29 large-cap fixtures, 252-day training window, 21-day hold, 126 non-overlapping folds, Ledoit-Wolf covariance. Candidates and pass criteria were committed before any result (`docs/PREREG_methods_vs_equal_weight.md`): minimum variance (primary), inverse volatility, and a 50/50 blend with 1/N. **Cost fix:** the old benchmark paid no turnover because it reset to 1/N with no price drift, which favoured it. Here every rule, equal weight included, pays 0.2075% per unit of turnover measured from the weights it has drifted to. Equal weight's turnover is 4.9% per fold, not zero.
+
+| Rule (net of costs) | Compounded | Sharpe | Volatility | Max drawdown | Turnover per fold | Sharpe difference vs 1/N (95% interval) |
+|---|---|---|---|---|---|---|
+| Equal weight | +420.4% | 1.13 | 15.0% | -24.0% | 4.9% | n/a |
+| Minimum variance | +254.6% | 0.94 | 13.9% | -21.1% | 21.0% | -0.19 (-0.51 to +0.07) |
+| Inverse volatility | +397.3% | 1.13 | 14.6% | -23.2% | 5.4% | -0.00 (-0.04 to +0.04) |
+| 50/50 blend | +333.1% | 1.07 | 14.1% | -22.0% | 11.9% | -0.06 (-0.19 to +0.06) |
+| Max-Sharpe (previous method) | +255.7% | 0.76 | 18.1% | -22.7% | 53.9% | -0.37 (-0.92 to +0.09) |
+
+**Pre-registered verdict for minimum variance: fail** (Sharpe below 1/N, turnover above the 20% limit, and the 126-day check fails too). Intervals come from a stationary bootstrap over folds; with 126 folds none of the gaps is statistically separable from zero except max-Sharpe at the 126-day window.
+
+**Reading it.** Equal weight is not beaten on this universe, which matches DeMiguel, Garlappi and Uppal (2009). Minimum variance does what it claims, lower risk, and pays for it in return and turnover. Inverse volatility is the interesting neutral result: it ties 1/N with similar turnover while weighting by risk. It was one of three candidates tried, so it would not have counted as a pass even had it won. No parameter was changed after seeing these numbers.
+
+**What this does not show.** Today's large caps (survivorship, already disclosed) flatter every long-only rule, and 126 folds from about 11 years give wide intervals. The old max-Sharpe tables above are unchanged.
 
 ## Limitations and what would make me wrong
 
