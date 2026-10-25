@@ -35,6 +35,7 @@ from pathlib import Path
 import numpy as np
 from scipy.optimize import minimize
 
+from optimizer import DISCLAIMER
 from optimizer.constraints import DEFAULT_SECTOR_MAP
 from optimizer.covariance import sample_mean_cov
 from optimizer.returns import FIXTURES_DIR, annualize_cov, annualize_mean, load_returns_matrix
@@ -308,6 +309,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    print(DISCLAIMER)
 
     if bool(args.contract) != bool(args.contract_ticker):
         parser.error("--contract and --contract-ticker must be given together")

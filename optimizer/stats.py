@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 
+from optimizer import DISCLAIMER
 from optimizer.covariance import (
     condition_number,
     correlation_matrix,
@@ -122,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    print(DISCLAIMER)
     result = run(tickers, args.fixtures_dir)
     print(_format_report(result))
     return 0

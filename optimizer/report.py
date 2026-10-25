@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
+from optimizer import DISCLAIMER
 from optimizer.covariance import sample_mean_cov
 from optimizer.frontier import FrontierPoint, build_frontier
 from optimizer.returns import FIXTURES_DIR, annualize_cov, annualize_mean, load_returns_matrix
@@ -189,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    print(DISCLAIMER)
     result = run(tickers, args.risk_free_rate, args.fixtures_dir, args.n_points)
 
     chart_path = None

@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.optimize import minimize
 
+from optimizer import DISCLAIMER
 from optimizer.covariance import sample_mean_cov
 from optimizer.frontier import min_variance_weights
 from optimizer.returns import FIXTURES_DIR, annualize_cov, annualize_mean, load_returns_matrix
@@ -390,6 +391,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    print(DISCLAIMER)
 
     sector_map = _parse_sector_map(args.sector_map) if args.sector_map else None
     sector_caps = _parse_kv_floats(args.sector_cap) if args.sector_cap else None

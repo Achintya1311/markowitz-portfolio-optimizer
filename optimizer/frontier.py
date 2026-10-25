@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.optimize import minimize
 
+from optimizer import DISCLAIMER
 from optimizer.covariance import sample_mean_cov
 from optimizer.returns import FIXTURES_DIR, annualize_cov, annualize_mean, load_returns_matrix
 
@@ -252,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    print(DISCLAIMER)
     result = run(tickers, args.target_return, args.fixtures_dir, args.n_points)
     print(_format_report(result))
     return 0

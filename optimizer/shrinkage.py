@@ -41,6 +41,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.optimize import minimize
 
+from optimizer import DISCLAIMER
 from optimizer.covariance import condition_number, sample_mean_cov
 from optimizer.returns import FIXTURES_DIR, annualize_cov, annualize_mean, load_returns_matrix
 from optimizer.tangency import TangencyPoint, max_sharpe_weights_long_only
@@ -296,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+    print(DISCLAIMER)
     result = run(tickers, args.risk_free_rate, args.fixtures_dir)
     print(_format_report(result))
     return 0
