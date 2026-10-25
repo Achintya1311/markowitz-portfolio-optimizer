@@ -1,4 +1,7 @@
-"""Position sizing for the spine (v0.4 contract, integration day).
+"""Sector-capped optimizer weight for the spine (v0.4 contract, integration day).
+
+The weight is a method output on historical data, not a position size or a
+holding (hub CRITIQUES.md S17).
 
     python -m optimizer.sizing --tickers RELIANCE.NS,TATACHEM.NS,CROMPTON.NS \\
         --risk-free-rate 0.0 --sector-cap 0.5 \\
@@ -9,7 +12,7 @@ long-only max-Sharpe tangency portfolio -- sample or Ledoit-Wolf shrunk
 covariance alike -- is a 100% single-name corner solution (RELIANCE.NS,
 negative Sharpe), a direct consequence of having only three assets to pick
 from. That number is not a position size any real book would take, so it is
-not what this module publishes as "how much of this name to hold". Instead
+not the weight this module writes to the file contract. Instead
 it combines Day 4's Ledoit-Wolf shrunk covariance (the method named in
 NEXT_STEPS.md's committed contract, ``max_sharpe_ledoit_wolf``) with Day 5's
 sector-cap machinery: maximize Sharpe subject to the same budget/long-only
@@ -196,7 +199,7 @@ def run(
 
 
 def to_contract(result: dict, ticker: str) -> dict:
-    """The ``sizing`` block this repo publishes to the spine (v0.4), matching
+    """The ``sizing`` block this repo writes as a file contract (v0.4), matching
     the shape ``NEXT_STEPS.md`` committed to before this module existed:
     ``{"sizing": {"weight", "method", "constraint_binding"}}``.
 
@@ -211,7 +214,7 @@ def to_contract(result: dict, ticker: str) -> dict:
         raise ValueError(f"{ticker!r} not in {tickers}")
     capped = result["capped"]
     if not capped.success:
-        raise ValueError("sector-capped sizing solve did not converge - refusing to publish a contract from it")
+        raise ValueError("sector-capped sizing solve did not converge - refusing to write a contract from it")
 
     idx = tickers.index(ticker)
     sector = result["sector_map"][ticker]
@@ -250,7 +253,7 @@ def _format_report(result: dict) -> str:
     lines.append("")
 
     capped = result["capped"]
-    lines.append("sector-capped max-Sharpe tangency (what this repo actually publishes, v0.4):")
+    lines.append("sector-capped max-Sharpe tangency (the weight written to the v0.4 file contract; a method output on historical data, not a position size):")
     if not capped.success:
         lines.append("  infeasible under these sector caps")
     else:
@@ -275,8 +278,9 @@ def _format_report(result: dict) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Sector-capped, Ledoit-Wolf-shrunk max-Sharpe position sizing "
-        "- the v0.4 integration day, published to STOCKSTALKER as a file contract."
+        description="Sector-capped, Ledoit-Wolf-shrunk max-Sharpe optimizer weight "
+        "- the v0.4 integration day, written as a file contract STOCKSTALKER reads. "
+        "A method output on historical data, not a position size."
     )
     parser.add_argument(
         "--tickers", required=True, help="comma-separated tickers, e.g. RELIANCE.NS,TATACHEM.NS,CROMPTON.NS"

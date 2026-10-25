@@ -383,7 +383,7 @@ the real fixtures: `optimizer.report` wrote a real PNG to `outputs/` and
 printed the weights table above; `optimizer.audit` printed and wrote a
 clean `outputs/audit_<date>.md` report, exit code 0.
 
-**Integration day - position sizing contract for the spine (`optimizer.sizing`,
+**Integration day - sector-capped optimizer weight, written as a file contract for the spine (`optimizer.sizing`,
 v0.4).** Day 3/4/6/7 all found the same thing: this 3-asset universe's raw
 long-only max-Sharpe tangency portfolio is a 100% RELIANCE.NS corner
 solution, not a position size a real book would take. This module combines
@@ -756,7 +756,7 @@ The headline above says max-Sharpe loses to 1/N. The README already gives the ca
 
 ## Where this sits
 
-Part of a nine-repo research pipeline. Stock Stalker screens the NSE universe; this repo publishes a versioned artifact it reads back:
+Part of a nine-repo research pipeline. Stock Stalker screens the NSE universe; this repo writes a versioned file contract it reads back. The weight is a method output on historical data, not a position size or a holding:
 
 ```json
 {

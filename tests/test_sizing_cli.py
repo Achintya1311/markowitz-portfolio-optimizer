@@ -71,3 +71,12 @@ def test_cli_rejects_single_ticker():
     result = run_cli("--tickers", "RELIANCE.NS")
     assert result.returncode != 0
     assert "at least 2" in result.stderr
+
+
+def test_cli_frames_weight_as_method_output_not_a_holding():
+    # S17: the capped weight on a named stock is a method output, not a
+    # position size the repo "publishes".
+    result = run_cli("--tickers", "RELIANCE.NS,TATACHEM.NS,CROMPTON.NS")
+    assert result.returncode == 0, result.stderr
+    assert "not a position size" in result.stdout
+    assert "publishes" not in result.stdout
