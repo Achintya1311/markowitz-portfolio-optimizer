@@ -20,7 +20,7 @@ def _assert_same(fresh, committed, path=""):
         for k in committed:
             _assert_same(fresh[k], committed[k], f"{path}.{k}")
     elif isinstance(committed, float):
-        assert fresh == pytest.approx(committed, abs=1e-6), path
+        assert fresh == pytest.approx(committed, abs=5e-5), path
     else:
         assert fresh == committed, path
 
@@ -38,3 +38,14 @@ def test_report_carries_the_headline_fields():
     assert {"n_folds", "optimizer_before_costs", "optimizer_after_costs", "equal_weight_before_costs",
             "t_stat_excess_after_costs"} <= set(wf)
     assert {"equal_weight", "min_variance", "inverse_vol", "blend_50_50", "max_sharpe"} == set(r["methods_252"])
+
+
+def test_float_tolerance_ignores_last_digit_rounding_noise():
+    """D38 reopened: BLAS threading moves the 6th decimal by 1e-6; that is not drift."""
+    _assert_same({"t": -0.864836 + 1e-6}, {"t": -0.864836})
+
+
+def test_float_tolerance_still_catches_drift():
+    """Half the README's 0.01-point precision (5e-5) is the bound; 1e-4 must fail."""
+    with pytest.raises(AssertionError):
+        _assert_same({"t": -0.864836 + 1e-4}, {"t": -0.864836})
