@@ -38,7 +38,9 @@ jobs:
           cache: pip
 
       - name: Install
-        run: pip install pandas yfinance
+        # The package itself too: the run regenerates the large-cap report and
+        # runs the test suite before committing anything (D38, P83).
+        run: pip install -e ".[dev]"
 
       - name: Fetch the large-cap universe (best effort)
         # A 429 or an empty response from one name is not a workflow
@@ -48,11 +50,21 @@ jobs:
         run: PYTHONPATH=. python3 scripts/fetch_largecaps.py
         continue-on-error: true
 
+      - name: Regenerate the large-cap report from the refreshed fixtures
+        # D38: adjusted closes are rewritten after dividends/splits and new days
+        # can add a walk-forward fold, so the headline can move on any refresh.
+        run: python -m optimizer.methods --report reports/largecap_latest.json
+
+      - name: Tests
+        # P83: a push made with GITHUB_TOKEN starts no other workflow, so ci.yml
+        # never sees this commit. Run the suite here; a failure stops the commit.
+        run: pytest -q
+
       - name: Commit if the fixture changed
         run: |
           git config user.name "Achintya1311"
           git config user.email "67464985+Achintya1311@users.noreply.github.com"
-          git add fixtures/ohlcv_largecap
+          git add fixtures/ohlcv_largecap reports/largecap_latest.json
           if git diff --cached --quiet; then
             echo "no change in the fetched fixture - nothing to commit"
             exit 0

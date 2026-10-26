@@ -125,13 +125,42 @@ def verdict(w252: dict, w126: dict, name: str = "min_variance") -> dict:
     return out
 
 
+def build_report(tickers: list[str], fixtures_dir: str, dates, w252: dict, verdict_mv: dict) -> dict:
+    """D38: the large-cap headline as plain JSON, small enough to diff, so the
+    weekly data refresh can regenerate it next to the data and a test can check
+    the two agree. Covers README lines 7-8 and the site's Portfolio card: the
+    original max-Sharpe walk-forward (``optimizer.oos``, 252/21, rf 0) and this
+    module's 252-day methods table and pre-registered verdict."""
+    from optimizer import oos
+
+    wf = oos.run(tickers, fixtures_dir, train_window=252, test_window=21, risk_free=0.0)
+    r6 = lambda x: None if x is None else round(float(x), 6)  # noqa: E731
+    keep = ("n_folds", "compounded_net", "sharpe_net", "vol_annual", "max_drawdown", "avg_turnover")
+    return {
+        "fixture_last_date": str(dates[-1])[:10],
+        "n_assets": len(tickers),
+        "walk_forward_252": {
+            "n_folds": len(wf.folds),
+            "optimizer_before_costs": r6(wf.optimizer_compounded_return),
+            "optimizer_after_costs": r6(wf.optimizer_compounded_return_net),
+            "equal_weight_before_costs": r6(wf.equal_weight_compounded_return),
+            "t_stat_excess_after_costs": r6(wf.t_stat_excess_net),
+        },
+        "methods_252": {n: {k: (m[k] if k == "n_folds" else r6(m[k])) for k in keep}
+                        for n, m in w252["methods"].items()},
+        "verdict_min_variance": verdict_mv,
+    }
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--fixtures-dir", default=str(LARGECAP_DIR))
     ap.add_argument("--json", default=None)
+    ap.add_argument("--report", default=None, metavar="PATH",
+                    help="also write the compact headline report (reports/largecap_latest.json is this, committed)")
     a = ap.parse_args(argv)
     tickers = sorted(p.stem.replace("_", ".") for p in Path(a.fixtures_dir).glob("*.csv"))
-    _, returns = load_returns_matrix(tickers, a.fixtures_dir)
+    dates, returns = load_returns_matrix(tickers, a.fixtures_dir)
     w252, w126 = run(returns, 252), run(returns, 126)
     out = {"n_assets": len(tickers), "w252": w252, "w126": w126, "verdict_min_variance": verdict(w252, w126)}
     for label, r in (("252-day training window", w252), ("126-day training window", w126)):
@@ -144,6 +173,11 @@ def main(argv=None) -> int:
     print("\npre-registered verdict for min_variance:", json.dumps(out["verdict_min_variance"]))
     if a.json:
         Path(a.json).write_text(json.dumps(out, indent=1))
+    if a.report:
+        report = build_report(tickers, a.fixtures_dir, dates, w252, out["verdict_min_variance"])
+        Path(a.report).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.report).write_text(json.dumps(report, indent=2) + "\n")
+        print(f"report written to {a.report}")
     return 0
 
 
