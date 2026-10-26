@@ -11,7 +11,7 @@ Educational research on historical data. Not investment advice. Not a SEBI-regis
 
 Mean-variance optimization over an NSE universe, with the fragility of the inputs treated as the main finding rather than a footnote.
 
-**Status:** Complete on a 3-stock universe (Sep 2026), reran on a 29-name large-cap universe (17 Oct 2026, Day 9), cost-adjusted (18 Oct 2026, Day 40), and sensitivity-checked for risk-free rate and window pairing (19 Oct 2026, Day 43). Part of a nine-repo equity research pipeline; [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
+**Status:** Complete on a 3-stock universe (Sep 2026), reran on a 29-name large-cap universe (17 Oct 2026, Day 9), cost-adjusted (18 Oct 2026, Day 40), and sensitivity-checked for risk-free rate and window pairing (19 Oct 2026, Day 43). Part of an eight-repo equity research pipeline (STOCKSTALKER plus seven research repos; the separate stockstalker-lab is not counted); [STOCKSTALKER](https://github.com/Achintya1311/STOCKSTALKER) is the front door.
 
 *Educational research on historical data. Not investment advice. Not a SEBI-registered research analyst.*
 
@@ -756,7 +756,7 @@ The headline above says max-Sharpe loses to 1/N. The README already gives the ca
 
 ## Where this sits
 
-Part of a nine-repo research pipeline. Stock Stalker screens the NSE universe; this repo writes a versioned file contract it reads back. The weight is a method output on historical data, not a position size or a holding:
+Part of an eight-repo research pipeline. Stock Stalker screens the NSE universe; this repo writes a versioned file contract it reads back. The weight is a method output on historical data, not a position size or a holding:
 
 ```json
 {
