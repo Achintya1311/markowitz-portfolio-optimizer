@@ -24,4 +24,8 @@ jobs:
 
       - name: Tests
         # Offline against committed fixtures only; no network or API key involved.
-        run: pytest -q
+        # Failed test ids are also emitted as annotations, readable through the
+        # checks API when the raw log is not reachable.
+        run: |
+          set -o pipefail
+          pytest -q -rf 2>&1 | tee pytest.log || { grep '^FAILED' pytest.log | sed 's/^/::error::/'; exit 1; }
