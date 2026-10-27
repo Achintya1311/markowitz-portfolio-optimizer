@@ -28,6 +28,14 @@ pushing this file or the workflow file, or ``workflow_dispatch`` - not by
 hand from a cloud sandbox, since the free yfinance endpoint intermittently
 429s or drops a NaN last bar from a cloud IP (hub CRITIQUES.md D8), and
 Actions runners draw from a larger, less-flagged IP pool.
+
+P129 (hub CRITIQUES.md): the same run also fetches the Nifty 50 index
+(``^NSEI``) into ``fixtures/index/NSEI.csv`` (``date,close``), so the
+optimiser can be compared with a passive index holder. ``^NSEI`` is a
+*price* index with no dividends, while the stock closes are
+dividend-adjusted, so any comparison built on it is biased against the
+index by roughly the Nifty dividend yield. The index keeps its own
+trading calendar; it is aligned to the stock calendar when it is read.
 """
 from __future__ import annotations
 
@@ -41,6 +49,9 @@ import pandas as pd
 import yfinance as yf
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "ohlcv_largecap"
+
+INDEX_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "index"
+DEFAULT_INDEX = "^NSEI"
 
 START_DATE = "2015-01-01"
 
@@ -153,6 +164,37 @@ def fetch_and_write(
     return [write_fixture(t, df, calendar, fixtures_dir) for t, df in frames.items()]
 
 
+def index_fixture_path(ticker: str, index_dir: Path = INDEX_DIR) -> Path:
+    """``^NSEI`` -> ``fixtures/index/NSEI.csv``."""
+    return index_dir / f"{ticker.lstrip('^').replace('.', '_')}.csv"
+
+
+def write_index_fixture(ticker: str, df: pd.DataFrame, index_dir: Path = INDEX_DIR) -> Path:
+    """Write ``date,close`` ascending. Only the close: an index has no
+    tradable volume, and nothing downstream needs high/low/open."""
+    path = index_fixture_path(ticker, index_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["date", "close"])
+        for ts, close in df["Close"].sort_index().items():
+            writer.writerow([ts.strftime("%Y-%m-%d"), round(float(close), 4)])
+    return path
+
+
+def fetch_index(
+    ticker: str, start: str = START_DATE, end: str | None = None, index_dir: Path = INDEX_DIR
+) -> Path | None:
+    """Best effort, like ``fetch_and_write``: a failed index fetch is
+    logged and leaves any existing index fixture untouched."""
+    try:
+        df = download_one(ticker, start, end)
+    except RuntimeError as exc:
+        print(f"skipping index {ticker}: {exc}", file=sys.stderr)
+        return None
+    return write_index_fixture(ticker, df, index_dir)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -163,6 +205,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--start", default=START_DATE)
     parser.add_argument("--end", default=None, help="default: today (yfinance's own default)")
     parser.add_argument("--fixtures-dir", default=str(FIXTURES_DIR))
+    parser.add_argument(
+        "--index",
+        default=DEFAULT_INDEX,
+        help="index ticker written to --index-dir (P129); empty string skips it",
+    )
+    parser.add_argument("--index-dir", default=str(INDEX_DIR))
     args = parser.parse_args(argv)
 
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
@@ -173,6 +221,10 @@ def main(argv: list[str] | None = None) -> int:
     paths = fetch_and_write(tickers, start=args.start, end=args.end, fixtures_dir=Path(args.fixtures_dir))
     for p in paths:
         print(f"wrote {p}")
+    if args.index:
+        index_path = fetch_index(args.index, start=args.start, end=args.end, index_dir=Path(args.index_dir))
+        if index_path is not None:
+            print(f"wrote {index_path}")
     return 0
 
 

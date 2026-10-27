@@ -56,4 +56,4 @@ def test_update_readme_table_is_a_no_op_when_the_table_matches():
 def test_refresh_workflow_updates_and_commits_the_readme():
     wf = (ROOT / ".github" / "workflows" / "fetch-largecaps.yml").read_text()
     assert "--update-readme README.md" in wf
-    assert "git add fixtures/ohlcv_largecap reports/largecap_latest.json README.md" in wf
+    assert "git add fixtures/ohlcv_largecap fixtures/index reports/largecap_latest.json README.md" in wf
