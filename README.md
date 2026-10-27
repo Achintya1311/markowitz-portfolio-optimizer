@@ -346,7 +346,9 @@ having only 3 assets to allocate across.
 
 **No NSE index/benchmark fixture is committed anywhere in this sandbox**
 (no network access, zero spend, and none was ever fetched for this
-pipeline) - `optimizer.oos` compares the optimizer against equal-weight
+pipeline; superseded 27 Oct 2026, P129: the Actions fetch now writes
+`fixtures/index/NSEI.csv` and `optimizer.methods` shows a price-only
+Nifty 50 row) - `optimizer.oos` compares the optimizer against equal-weight
 only, not against the index `NEXT_STEPS.md` also asks for. The CLI prints
 this as a limitation on every run rather than silently dropping the index
 leg of the comparison; see the Limitations section below.
@@ -537,8 +539,9 @@ for that universe and are what the v0.4 sizing contract to STOCKSTALKER
 (whose own screen universe is RELIANCE.NS/TATACHEM.NS/CROMPTON.NS, not this
 29-name one) is built from; this day is a separate, wider analysis that
 answers D4's specific critique rather than supersedes the earlier one. The
-same D8/Day 6 limitation still applies: no NSE index/benchmark fixture
-exists in this sandbox, so this is optimizer-vs-equal-weight only, not the
+same D8/Day 6 limitation still applied then (since 27 Oct 2026 the
+large-cap methods table has a price-only Nifty 50 row, P129): no NSE index/benchmark fixture
+existed in this sandbox, so this is optimizer-vs-equal-weight only, not the
 optimizer-vs-index comparison `NEXT_STEPS.md` also asks for.
 
 Verified: 183/183 tests pass (`PYTHONPATH=. pytest`; bare `pytest` still
@@ -723,6 +726,9 @@ The headline above says max-Sharpe loses to 1/N. The README already gives the ca
 | Inverse volatility | +397.3% | 1.13 | 14.6% | -23.2% | 5.4% | -0.00 (-0.04 to +0.04) |
 | 50/50 blend | +333.1% | 1.07 | 14.1% | -22.0% | 11.9% | -0.06 (-0.19 to +0.06) |
 | Max-Sharpe (previous method) | +255.7% | 0.76 | 18.1% | -22.7% | 53.9% | -0.37 (-0.92 to +0.09) |
+| Nifty 50 price index (no dividends, no costs) | +201.2% | 0.76 | 15.5% | -27.4% | 0.0% | -0.37 (-0.54 to -0.22) |
+
+**Index row (P129, added 27 Oct 2026, after the pre-registration, so not part of the verdict).** The Nifty 50 (`^NSEI`, fetched weekly in Actions into `fixtures/index/NSEI.csv`) held over the same 126 holds, with no costs. Two things favour every stock row over it, so the gap is not a measure of what any rule added: `^NSEI` is a price index with no dividends while the stock fixtures are dividend-adjusted (worth roughly the Nifty dividend yield a year), and the 29 names are today's constituents replayed to 2015 (survivorship, D23). Nine stock-calendar days with no index close carry the previous close.
 
 **Pre-registered verdict for minimum variance: fail** (Sharpe below 1/N, turnover above the 20% limit, and the 126-day check fails too). Intervals come from a stationary bootstrap over folds; with 126 folds none of the gaps is statistically separable from zero except max-Sharpe at the 126-day window.
 
@@ -737,7 +743,7 @@ The headline above says max-Sharpe loses to 1/N. The README already gives the ca
 - Days 1-8 ran on only 3 tickers (the shared Stock Stalker universe). Day 9 (D4) reran `stats`/`shrinkage`/`frontier`/`oos` on a 29-name large-cap universe once `scripts/fetch_largecaps.py`'s fixture landed - see the Findings section for that rerun. It is a separate, wider analysis, not a replacement: the v0.4 sizing contract STOCKSTALKER reads still comes from this repo's original 3-ticker fixture, because that is STOCKSTALKER's own screen universe.
 - Day 6's walk-forward test found the optimizer nominally beats equal-weight on the 3-ticker universe (-16.73% vs -17.33% compounded over 11 out-of-sample folds, 54.5% fold win rate) but the mean per-fold excess return's t-stat is +0.07 - not distinguishable from zero at any conventional confidence. Day 9's 126-fold rerun on 29 names flips which side nominally wins (equal-weight +426.96% vs optimizer +309.00%, 51.6% win rate, t-stat -0.50) while reaching the same "not significant" conclusion - out-of-sample, equal-weight is a hard benchmark to beat on either universe size, and neither result should be read as the optimizer (or equal-weight) having a real edge.
 - Day 6's 3-asset long-only max-Sharpe solve was a corner solution (100% in one name) in 9 of its 11 out-of-sample folds - "optimization" there was mostly picking the best-looking single name each period, not diversification, purely a consequence of having only 3 assets to choose from. Day 9 confirms this was indeed a too-small-universe artifact: on the 29-name rerun, only 1 of 126 folds is a single-name corner solution.
-- There is no NSE index/benchmark fixture committed anywhere in this sandbox (no network access here, and none was ever fetched for this pipeline), so both Day 6's and Day 9's out-of-sample comparisons are optimizer-vs-equal-weight only - neither includes the vs-index leg `NEXT_STEPS.md` asks for. `optimizer.oos` states this on every run rather than substituting a fabricated benchmark.
+- The only index comparison is the price-only Nifty 50 row in the large-cap methods table (`optimizer.methods`, P129). `^NSEI` carries no dividends while the stock fixtures are dividend-adjusted, so it is biased against the index by roughly the Nifty dividend yield; a total-return index series is not available from the free source. Today's constituents replayed to 2015 (D23) also favour the stock rows. Day 6's 3-ticker `optimizer.oos` comparison and Day 9's rerun remain optimizer-vs-equal-weight only.
 - Day 9's large-cap fixture is 29 names, not the 30 `scripts/fetch_largecaps.py` targets: TATAMOTORS.NS returns a genuine yfinance 404 ("Quote not found for symbol"), not a transient rate limit, so it is skipped rather than retried into existing. `fetch_and_write` now treats a permanently-failing ticker as droppable rather than fatal to the whole batch - before this fix, that one ticker silently aborted the Actions workflow's fixture write on both of its first two runs (it reported `success` while writing zero files).
 - Day 2's frontier ranks portfolios by the same sample mean vector Day 1 showed has |t| < 2 on every ticker. Concretely: all three means are negative, so every long-only frontier point here targets a *loss*, and a positive-return target is only reachable long/short, by shorting the least-negative name and going long the more-negative ones - an artifact of noisy point estimates as much as a real edge, not a strategy this repo is recommending.
 - The long/short variant (`optimizer.frontier`, `optimizer.constraints --long-short`) still has no *leverage* limit - `--max-position` caps each name's magnitude but says nothing about gross exposure, so a long/short target far from the feasible long-only range can still imply large aggregate short exposure across several names even with every individual position capped.

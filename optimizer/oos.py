@@ -18,11 +18,10 @@ weights.
 
 The benchmark is equal weight, held the same way over the same test
 windows. NEXT_STEPS.md asks for a comparison against equal-weight *and*
-the index; there is no committed NSE index fixture anywhere in this
-sandbox (no network, zero spend, and no benchmark series was ever fetched
-for this pipeline) and this module does not fabricate one, so the index
-leg of that comparison is reported here as a limitation, not silently
-dropped - see the README.
+the index. This module stays optimizer-vs-equal-weight; the index leg
+(a price-only Nifty 50 fixture fetched in Actions, P129) is in
+``optimizer.methods`` on the large-cap universe, and this CLI says so on
+every run - see the README.
 
 Equal-weight is a genuinely hard benchmark for a short, noisy sample to
 beat, and this project's Day 1 already established that the mean vector
@@ -496,9 +495,8 @@ def _format_report(result: OOSResult) -> str:
             "and the README's limitations section before reading that as a durable edge."
         )
     lines.append(
-        "limitation: no NSE index/benchmark fixture is committed anywhere in this sandbox (no network, zero "
-        "spend) - this is optimizer-vs-equal-weight only, not the optimizer-vs-index comparison NEXT_STEPS.md "
-        "asks for."
+        "limitation: this is optimizer-vs-equal-weight only; the index leg (price-only Nifty 50, no "
+        "dividends, P129) is in python -m optimizer.methods on the large-cap universe."
     )
     lines.append("")
 

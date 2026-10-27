@@ -8,10 +8,16 @@ Every rule is evaluated on the same folds as ``optimizer.oos`` (rolling training
 and costed the same way, with one correction: turnover is measured from the weights a portfolio has *drifted*
 to by the end of the previous hold, back to its new target. The older benchmark paid no turnover because it
 reset to 1/N with no drift; that favoured equal weight, so here equal weight pays for rebalancing too.
+
+P129: the Nifty 50 (``fixtures/index/NSEI.csv``, fetched in Actions) is shown over the same holds as a
+passive reference, with no costs. It is a price index with no dividends, while the stock fixtures are
+dividend-adjusted, so the comparison is biased against the index by roughly the Nifty dividend yield.
+It is kept out of ``METHODS`` and the pre-registered verdict, which were fixed before it existed.
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
@@ -19,12 +25,14 @@ import numpy as np
 
 from optimizer.covariance import sample_mean_cov
 from optimizer.oos import TURNOVER_COST_RATE, total_simple_returns, walk_forward_folds
-from optimizer.returns import annualize_cov, annualize_mean, load_returns_matrix
+from optimizer.returns import annualize_cov, annualize_mean, fixture_path, load_dates, load_returns_matrix
 from optimizer.shrinkage import global_min_variance_weights, ledoit_wolf_shrinkage
 from optimizer.tangency import max_sharpe_weights_long_only
 
 ROOT = Path(__file__).resolve().parent.parent
 LARGECAP_DIR = ROOT / "fixtures" / "ohlcv_largecap"
+INDEX_FIXTURE = ROOT / "fixtures" / "index" / "NSEI.csv"
+INDEX_CAVEAT = "Nifty 50 price index, no dividends (stocks are dividend-adjusted), no costs"
 FOLDS_PER_YEAR = 252 / 21
 
 
@@ -80,6 +88,34 @@ def walk_forward(returns: np.ndarray, rule, train_window: int, test_window: int 
     return {"gross": np.array(gross), "net": np.array(net), "turnover": np.array(turnover)}
 
 
+def load_index_returns(price_dates: list[str], path: Path = INDEX_FIXTURE):
+    """Daily log returns of the index on the stock price calendar, or None if the fixture is missing.
+
+    The index has its own calendar. A stock day with no index close carries the previous close
+    (a 0 return); a stock day before the first index close takes that first close. Returns
+    ``(returns, n_filled)`` so the caller can say how many days were filled."""
+    path = Path(path)
+    if not path.exists():
+        return None
+    with open(path, newline="") as f:
+        closes = {row["date"]: float(row["close"]) for row in csv.DictReader(f)}
+    first = min(closes)
+    aligned, last, filled = [], closes[first], 0
+    for d in price_dates:
+        if d in closes:
+            last = closes[d]
+        else:
+            filled += 1
+        aligned.append(last)
+    return np.diff(np.log(aligned)), filled
+
+
+def index_walk_forward(index_returns: np.ndarray, train_window: int, test_window: int = 21) -> np.ndarray:
+    """Price return of the index over each hold of the same folds every rule uses; no cost, no turnover."""
+    return np.array([float(total_simple_returns(index_returns[te]))
+                     for _, te in walk_forward_folds(len(index_returns), train_window, test_window)])
+
+
 def summarize(net: np.ndarray, turnover: np.ndarray) -> dict:
     eq = np.cumprod(1.0 + net)
     peak = np.maximum.accumulate(np.r_[1.0, eq])[1:]
@@ -102,13 +138,17 @@ def sharpe_diff_ci(a: np.ndarray, b: np.ndarray, reps: int = 5000, seed: int = 0
     return {"diff": float(point), "lo": float(np.quantile(draws, 0.025)), "hi": float(np.quantile(draws, 0.975)), "block": blk}
 
 
-def run(returns: np.ndarray, train_window: int) -> dict:
+def run(returns: np.ndarray, train_window: int, index_returns: np.ndarray | None = None) -> dict:
     res = {name: walk_forward(returns, rule, train_window) for name, rule in METHODS.items()}
     out = {"train_window": train_window, "methods": {n: summarize(v["net"], v["turnover"]) for n, v in res.items()}}
     ew = res["equal_weight"]["net"]
     for n in METHODS:
         if n != "equal_weight":
             out["methods"][n]["sharpe_diff_vs_equal_weight"] = sharpe_diff_ci(res[n]["net"], ew)
+    if index_returns is not None:
+        net = index_walk_forward(index_returns, train_window)
+        out["index"] = summarize(net, np.zeros(len(net)))
+        out["index"]["sharpe_diff_vs_equal_weight"] = sharpe_diff_ci(net, ew)
     return out
 
 
@@ -136,7 +176,7 @@ def build_report(tickers: list[str], fixtures_dir: str, dates, w252: dict, verdi
     wf = oos.run(tickers, fixtures_dir, train_window=252, test_window=21, risk_free=0.0)
     r6 = lambda x: None if x is None else round(float(x), 6)  # noqa: E731
     keep = ("n_folds", "compounded_net", "sharpe_net", "vol_annual", "max_drawdown", "avg_turnover")
-    return {
+    report = {
         "fixture_last_date": str(dates[-1])[:10],
         "n_assets": len(tickers),
         "walk_forward_252": {
@@ -150,6 +190,9 @@ def build_report(tickers: list[str], fixtures_dir: str, dates, w252: dict, verdi
                         for n, m in w252["methods"].items()},
         "verdict_min_variance": verdict_mv,
     }
+    if "index" in w252:
+        report["index_252"] = {k: (w252["index"][k] if k == "n_folds" else r6(w252["index"][k])) for k in keep}
+    return report
 
 
 README_TABLE_ROWS = {
@@ -158,6 +201,7 @@ README_TABLE_ROWS = {
     "Inverse volatility": "inverse_vol",
     "50/50 blend": "blend_50_50",
     "Max-Sharpe (previous method)": "max_sharpe",
+    "Nifty 50 price index (no dividends, no costs)": "index",
 }
 
 
@@ -171,7 +215,13 @@ def update_readme_table(text: str, report: dict) -> str:
         cells = line.split("|")
         if len(cells) < 9 or cells[1].strip() not in README_TABLE_ROWS:
             continue
-        m = methods[README_TABLE_ROWS[cells[1].strip()]]
+        key = README_TABLE_ROWS[cells[1].strip()]
+        if key == "index":
+            if "index_252" not in report:
+                continue
+            m = report["index_252"]
+        else:
+            m = methods[key]
         values = (f"{m['compounded_net']:+.1%}", f"{m['sharpe_net']:.2f}", f"{m['vol_annual']:.1%}",
                   f"{m['max_drawdown']:.1%}", f"{m['avg_turnover']:.1%}")
         for j, v in enumerate(values, start=2):
@@ -184,6 +234,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--fixtures-dir", default=str(LARGECAP_DIR))
     ap.add_argument("--json", default=None)
+    ap.add_argument("--index-fixture", default=str(INDEX_FIXTURE),
+                    help="date,close index fixture for the passive leg (P129); skipped with a message if missing")
     ap.add_argument("--report", default=None, metavar="PATH",
                     help="also write the compact headline report (reports/largecap_latest.json is this, committed)")
     ap.add_argument("--update-readme", default=None, metavar="PATH",
@@ -191,7 +243,9 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     tickers = sorted(p.stem.replace("_", ".") for p in Path(a.fixtures_dir).glob("*.csv"))
     dates, returns = load_returns_matrix(tickers, a.fixtures_dir)
-    w252, w126 = run(returns, 252), run(returns, 126)
+    loaded = load_index_returns(load_dates(fixture_path(tickers[0], a.fixtures_dir)), a.index_fixture)
+    index_returns = loaded[0] if loaded else None
+    w252, w126 = run(returns, 252, index_returns), run(returns, 126, index_returns)
     out = {"n_assets": len(tickers), "w252": w252, "w126": w126, "verdict_min_variance": verdict(w252, w126)}
     for label, r in (("252-day training window", w252), ("126-day training window", w126)):
         print(f"\n{label}, {r['methods']['equal_weight']['n_folds']} folds, {len(tickers)} assets, costs {TURNOVER_COST_RATE:.4%} per unit turnover (drift-aware)")
@@ -200,6 +254,15 @@ def main(argv=None) -> int:
             d = m.get("sharpe_diff_vs_equal_weight")
             ds = f"{d['diff']:+.2f} ({d['lo']:+.2f} to {d['hi']:+.2f})" if d else ""
             print(f"  {n:<14}{m['compounded_net']:>+15.1%}{m['sharpe_net']:>11.2f}{m['vol_annual']:>8.1%}{m['max_drawdown']:>9.1%}{m['avg_turnover']:>10.1%}   {ds}")
+        if "index" in r:
+            m, d = r["index"], r["index"]["sharpe_diff_vs_equal_weight"]
+            print(f"  {'nifty50_price':<14}{m['compounded_net']:>+15.1%}{m['sharpe_net']:>11.2f}{m['vol_annual']:>8.1%}{m['max_drawdown']:>9.1%}{'n/a':>10}   "
+                  f"{d['diff']:+.2f} ({d['lo']:+.2f} to {d['hi']:+.2f})")
+    if loaded:
+        print(f"\nnifty50_price: {INDEX_CAVEAT}; same holds as every rule; "
+              f"{loaded[1]} stock-calendar days with no index close carry the previous close")
+    else:
+        print(f"\nindex leg skipped: no index fixture at {a.index_fixture} (fetched weekly in Actions, P129)")
     print("\npre-registered verdict for min_variance:", json.dumps(out["verdict_min_variance"]))
     if a.json:
         Path(a.json).write_text(json.dumps(out, indent=1))

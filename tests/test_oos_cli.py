@@ -30,7 +30,7 @@ def test_cli_reports_compounded_returns_and_win_rate():
 def test_cli_reports_index_fixture_limitation():
     result = run_cli("--tickers", "RELIANCE.NS,TATACHEM.NS,CROMPTON.NS")
     assert result.returncode == 0, result.stderr
-    assert "no NSE index/benchmark fixture is committed" in result.stdout
+    assert "optimizer-vs-equal-weight only; the index leg (price-only Nifty 50" in result.stdout
 
 
 def test_cli_accepts_window_overrides():
