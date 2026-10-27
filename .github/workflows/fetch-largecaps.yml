@@ -53,7 +53,7 @@ jobs:
       - name: Regenerate the large-cap report from the refreshed fixtures
         # D38: adjusted closes are rewritten after dividends/splits and new days
         # can add a walk-forward fold, so the headline can move on any refresh.
-        run: python -m optimizer.methods --report reports/largecap_latest.json
+        run: python -m optimizer.methods --report reports/largecap_latest.json --update-readme README.md
 
       - name: Tests
         # P83: a push made with GITHUB_TOKEN starts no other workflow, so ci.yml
@@ -64,7 +64,7 @@ jobs:
         run: |
           git config user.name "Achintya1311"
           git config user.email "67464985+Achintya1311@users.noreply.github.com"
-          git add fixtures/ohlcv_largecap reports/largecap_latest.json
+          git add fixtures/ohlcv_largecap reports/largecap_latest.json README.md
           if git diff --cached --quiet; then
             echo "no change in the fetched fixture - nothing to commit"
             exit 0

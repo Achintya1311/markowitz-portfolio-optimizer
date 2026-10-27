@@ -34,3 +34,26 @@ def test_methods_table_row_matches_the_committed_report(label):
     assert cells[3] == f"{m['vol_annual']:.1%}"
     assert cells[4] == f"{m['max_drawdown']:.1%}"
     assert cells[5] == f"{m['avg_turnover']:.1%}"
+
+
+def test_update_readme_table_rewrites_drifted_cells_and_keeps_the_interval_column():
+    from optimizer.methods import update_readme_table
+
+    text = (ROOT / "README.md").read_text()
+    stale = text.replace("| Minimum variance | +254.5% |", "| Minimum variance | +999.9% |")
+    fixed = update_readme_table(stale, {"methods_252": REPORT})
+    assert fixed == text
+    assert "-0.19 (-0.51 to +0.07)" in fixed
+
+
+def test_update_readme_table_is_a_no_op_when_the_table_matches():
+    from optimizer.methods import update_readme_table
+
+    text = (ROOT / "README.md").read_text()
+    assert update_readme_table(text, {"methods_252": REPORT}) == text
+
+
+def test_refresh_workflow_updates_and_commits_the_readme():
+    wf = (ROOT / ".github" / "workflows" / "fetch-largecaps.yml").read_text()
+    assert "--update-readme README.md" in wf
+    assert "git add fixtures/ohlcv_largecap reports/largecap_latest.json README.md" in wf

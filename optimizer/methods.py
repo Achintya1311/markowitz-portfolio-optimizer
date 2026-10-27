@@ -152,12 +152,42 @@ def build_report(tickers: list[str], fixtures_dir: str, dates, w252: dict, verdi
     }
 
 
+README_TABLE_ROWS = {
+    "Equal weight": "equal_weight",
+    "Minimum variance": "min_variance",
+    "Inverse volatility": "inverse_vol",
+    "50/50 blend": "blend_50_50",
+    "Max-Sharpe (previous method)": "max_sharpe",
+}
+
+
+def update_readme_table(text: str, report: dict) -> str:
+    """D58: rewrite the README's pre-registered table from the report, so the
+    weekly refresh keeps the two in step. Only the five report columns change;
+    the Sharpe-difference interval column (not in the report) is kept."""
+    methods = report["methods_252"]
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        cells = line.split("|")
+        if len(cells) < 9 or cells[1].strip() not in README_TABLE_ROWS:
+            continue
+        m = methods[README_TABLE_ROWS[cells[1].strip()]]
+        values = (f"{m['compounded_net']:+.1%}", f"{m['sharpe_net']:.2f}", f"{m['vol_annual']:.1%}",
+                  f"{m['max_drawdown']:.1%}", f"{m['avg_turnover']:.1%}")
+        for j, v in enumerate(values, start=2):
+            cells[j] = f" {v} "
+        lines[i] = "|".join(cells)
+    return "\n".join(lines)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--fixtures-dir", default=str(LARGECAP_DIR))
     ap.add_argument("--json", default=None)
     ap.add_argument("--report", default=None, metavar="PATH",
                     help="also write the compact headline report (reports/largecap_latest.json is this, committed)")
+    ap.add_argument("--update-readme", default=None, metavar="PATH",
+                    help="with --report: rewrite the pre-registered table in this README from the report (D58)")
     a = ap.parse_args(argv)
     tickers = sorted(p.stem.replace("_", ".") for p in Path(a.fixtures_dir).glob("*.csv"))
     dates, returns = load_returns_matrix(tickers, a.fixtures_dir)
@@ -178,6 +208,10 @@ def main(argv=None) -> int:
         Path(a.report).parent.mkdir(parents=True, exist_ok=True)
         Path(a.report).write_text(json.dumps(report, indent=2) + "\n")
         print(f"report written to {a.report}")
+        if a.update_readme:
+            readme = Path(a.update_readme)
+            readme.write_text(update_readme_table(readme.read_text(), report))
+            print(f"table updated in {a.update_readme}")
     return 0
 
 
