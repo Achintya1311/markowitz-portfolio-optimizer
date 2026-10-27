@@ -32,8 +32,23 @@ This is the test that decides whether the repo is finished. A result that has no
 
 Every source is free. Nothing in this project requires a paid tier, a subscription, or a funded account.
 
-- yfinance - NSE daily prices
-- FRED / RBI - risk-free rate
+- `fixtures/ohlcv/` - RELIANCE.NS, TATACHEM.NS and CROMPTON.NS daily bars
+  (2024-09-04 to 2026-09-04), byte-for-byte copies of STOCKSTALKER's
+  committed files (last changed there in `d9fe2d8`). STOCKSTALKER fetched them
+  with yfinance `auto_adjust=True`, so they are back-adjusted for splits and
+  dividends, not the prices NSE printed. `tests/test_fixture_provenance.py`
+  pins each hash and compares them with `../STOCKSTALKER/fixtures/ohlcv/` when
+  that checkout exists:
+  - `RELIANCE_NS.csv` `81d022cb3dff50dc316d94dc1a58b64947a991850c6595480165a2723b623369`
+  - `TATACHEM_NS.csv` `986700d1bd15887486c77d240cbcd7f668664efc9d4a207b47de898e47a585ed`
+  - `CROMPTON_NS.csv` `db66db9aba5594544631f8887e7540101257e953cdec5f65ef76318b5a54327a`
+- `fixtures/ohlcv_largecap/` - 29 large caps from 2015-01-01, fetched with
+  yfinance `auto_adjust=True` (back-adjusted) by `scripts/fetch_largecaps.py`,
+  which `.github/workflows/fetch-largecaps.yml` runs weekly; each refresh can
+  rewrite past bars and regenerates `reports/largecap_latest.json` (D38).
+- Risk-free rate - not a data source. It is an assumed parameter
+  (`--risk-free-rate`, default 0.0; Day 43 sweeps 0%, 4% and 7%). No FRED or
+  RBI series is committed or fetched (D57; see Limitations).
 
 ## How to run
 
