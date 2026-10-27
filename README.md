@@ -719,9 +719,9 @@ The headline above says max-Sharpe loses to 1/N. The README already gives the ca
 | Rule (net of costs) | Compounded | Sharpe (rf = 0) | Volatility | Max drawdown | Turnover per fold | Sharpe difference vs 1/N (95% interval) |
 |---|---|---|---|---|---|---|
 | Equal weight | +420.4% | 1.13 | 15.0% | -24.0% | 4.9% | n/a |
-| Minimum variance | +254.5% | 0.94 | 13.9% | -21.1% | 21.0% | -0.19 (-0.51 to +0.07) |
+| Minimum variance | +254.6% | 0.94 | 13.9% | -21.1% | 21.0% | -0.19 (-0.51 to +0.07) |
 | Inverse volatility | +397.3% | 1.13 | 14.6% | -23.2% | 5.4% | -0.00 (-0.04 to +0.04) |
-| 50/50 blend | +333.0% | 1.07 | 14.1% | -22.0% | 11.9% | -0.06 (-0.19 to +0.06) |
+| 50/50 blend | +333.1% | 1.07 | 14.1% | -22.0% | 11.9% | -0.06 (-0.19 to +0.06) |
 | Max-Sharpe (previous method) | +255.7% | 0.76 | 18.1% | -22.7% | 53.9% | -0.37 (-0.92 to +0.09) |
 
 **Pre-registered verdict for minimum variance: fail** (Sharpe below 1/N, turnover above the 20% limit, and the 126-day check fails too). Intervals come from a stationary bootstrap over folds; with 126 folds none of the gaps is statistically separable from zero except max-Sharpe at the 126-day window.
