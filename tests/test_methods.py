@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from optimizer.methods import (blend, drift, equal_weight, inverse_vol, min_variance, sharpe_diff_ci, verdict, walk_forward)
+from optimizer.methods import (blend, drift, equal_weight, inverse_vol, min_variance, sharpe_diff_ci, summarize, verdict, walk_forward)
 
 
 def _panel(n=1200, k=6, seed=0):
@@ -62,3 +62,23 @@ def test_verdict_requires_every_pre_registered_criterion():
     assert verdict(good, good)["all_pass"]
     bad = {"methods": {"equal_weight": eq, "min_variance": {**mv, "avg_turnover": 0.3}}}
     assert not verdict(bad, good)["all_pass"]
+
+
+def test_daily_path_drawdown_sees_a_dip_that_recovers_inside_one_hold():
+    """P156: fold-end equity cannot see a 21-day hold that falls 20% and recovers; the daily path must."""
+    n_train, hold = 252, 21
+    r = np.zeros((n_train + 2 * hold, 2))
+    r[n_train:n_train + 10, :] = np.log(0.98)                    # hold 1 falls about 18%
+    r[n_train + 10:n_train + hold, :] = np.log(1.0 / 0.98) * 10 / 11   # and recovers most of it by day 21
+    out = walk_forward(r, equal_weight, n_train)
+    s = summarize(out["net"], out["turnover"], out["daily_equity"])
+    assert s["max_drawdown_fold_end"] > -0.05                     # month-end sampling barely sees it
+    assert s["max_drawdown"] < -0.15                              # the daily path does
+    assert out["daily_equity"][-1] == pytest.approx(1.0 + s["compounded_net"])
+
+
+def test_daily_equity_path_ends_at_the_compounded_net_return_and_starts_at_one():
+    out = walk_forward(_panel(), min_variance, 252)
+    assert out["daily_equity"][0] == pytest.approx(1.0)
+    assert out["daily_equity"][-1] == pytest.approx(np.prod(1.0 + out["net"]))
+    assert len(out["daily_equity"]) == 21 * len(out["net"]) + 1

@@ -76,6 +76,7 @@ def drift(weights: np.ndarray, test_returns: np.ndarray) -> np.ndarray:
 
 def walk_forward(returns: np.ndarray, rule, train_window: int, test_window: int = 21, cost_rate: float = TURNOVER_COST_RATE) -> dict:
     gross, net, turnover = [], [], []
+    daily = [1.0]                                             # P156: daily net equity, so drawdown is not sampled at fold ends
     held = None
     for tr, te in walk_forward_folds(returns.shape[0], train_window, test_window):
         target = rule(returns[tr])
@@ -84,8 +85,12 @@ def walk_forward(returns: np.ndarray, rule, train_window: int, test_window: int 
         r = total_simple_returns(returns[te])
         g = float(target @ r)
         gross.append(g); net.append(g - cost_rate * t); turnover.append(t)
+        growth = np.exp(np.cumsum(returns[te], axis=0))        # each asset's growth to every day of the hold, buy and hold
+        start = daily[-1]
+        daily.extend((start * (growth @ target - cost_rate * t)).tolist())   # additive cost, so the last day equals start * (1 + net)
         held = drift(target, r)
-    return {"gross": np.array(gross), "net": np.array(net), "turnover": np.array(turnover)}
+    return {"gross": np.array(gross), "net": np.array(net), "turnover": np.array(turnover),
+            "daily_equity": np.array(daily)}
 
 
 def load_index_returns(price_dates: list[str], path: Path = INDEX_FIXTURE):
@@ -116,13 +121,31 @@ def index_walk_forward(index_returns: np.ndarray, train_window: int, test_window
                      for _, te in walk_forward_folds(len(index_returns), train_window, test_window)])
 
 
-def summarize(net: np.ndarray, turnover: np.ndarray) -> dict:
+def max_drawdown(equity: np.ndarray) -> float:
+    """Deepest peak-to-trough fall of an equity path that starts at 1.0 (the start counts as a peak)."""
+    equity = np.asarray(equity, dtype=float)
+    return float((equity / np.maximum.accumulate(equity) - 1.0).min())
+
+
+def index_daily_equity(index_returns: np.ndarray, train_window: int, test_window: int = 21) -> np.ndarray:
+    """Daily equity of the index held over the same holds as every rule (no cost), starting at 1.0."""
+    eq, out = 1.0, [1.0]
+    for _, te in walk_forward_folds(len(index_returns), train_window, test_window):
+        path = eq * np.exp(np.cumsum(index_returns[te]))
+        out.extend(path.tolist())
+        eq = path[-1]
+    return np.array(out)
+
+
+def summarize(net: np.ndarray, turnover: np.ndarray, daily_equity: np.ndarray | None = None) -> dict:
+    """``max_drawdown`` is measured on the daily equity path when one is given (P156); ``max_drawdown_fold_end``
+    is the older figure, sampled only at the end of each 21-day hold, which misses a fall that recovers inside one."""
     eq = np.cumprod(1.0 + net)
-    peak = np.maximum.accumulate(np.r_[1.0, eq])[1:]
+    fold_end_dd = max_drawdown(np.r_[1.0, eq])
     sd = float(net.std(ddof=1))
     return {"compounded_net": float(eq[-1] - 1.0), "sharpe_net": float(net.mean() / sd * np.sqrt(FOLDS_PER_YEAR)) if sd else float("nan"),
-            "vol_annual": sd * float(np.sqrt(FOLDS_PER_YEAR)), "max_drawdown": float((eq / peak - 1.0).min()),
-            "avg_turnover": float(turnover.mean()), "n_folds": int(len(net))}
+            "vol_annual": sd * float(np.sqrt(FOLDS_PER_YEAR)), "max_drawdown": max_drawdown(daily_equity) if daily_equity is not None else fold_end_dd,
+            "max_drawdown_fold_end": fold_end_dd, "avg_turnover": float(turnover.mean()), "n_folds": int(len(net))}
 
 
 def sharpe_diff_ci(a: np.ndarray, b: np.ndarray, reps: int = 5000, seed: int = 0) -> dict:
@@ -140,14 +163,14 @@ def sharpe_diff_ci(a: np.ndarray, b: np.ndarray, reps: int = 5000, seed: int = 0
 
 def run(returns: np.ndarray, train_window: int, index_returns: np.ndarray | None = None) -> dict:
     res = {name: walk_forward(returns, rule, train_window) for name, rule in METHODS.items()}
-    out = {"train_window": train_window, "methods": {n: summarize(v["net"], v["turnover"]) for n, v in res.items()}}
+    out = {"train_window": train_window, "methods": {n: summarize(v["net"], v["turnover"], v["daily_equity"]) for n, v in res.items()}}
     ew = res["equal_weight"]["net"]
     for n in METHODS:
         if n != "equal_weight":
             out["methods"][n]["sharpe_diff_vs_equal_weight"] = sharpe_diff_ci(res[n]["net"], ew)
     if index_returns is not None:
         net = index_walk_forward(index_returns, train_window)
-        out["index"] = summarize(net, np.zeros(len(net)))
+        out["index"] = summarize(net, np.zeros(len(net)), index_daily_equity(index_returns, train_window))
         out["index"]["sharpe_diff_vs_equal_weight"] = sharpe_diff_ci(net, ew)
     return out
 
@@ -175,7 +198,7 @@ def build_report(tickers: list[str], fixtures_dir: str, dates, w252: dict, verdi
 
     wf = oos.run(tickers, fixtures_dir, train_window=252, test_window=21, risk_free=0.0)
     r6 = lambda x: None if x is None else round(float(x), 6)  # noqa: E731
-    keep = ("n_folds", "compounded_net", "sharpe_net", "vol_annual", "max_drawdown", "avg_turnover")
+    keep = ("n_folds", "compounded_net", "sharpe_net", "vol_annual", "max_drawdown", "max_drawdown_fold_end", "avg_turnover")
     report = {
         "fixture_last_date": str(dates[-1])[:10],
         "n_assets": len(tickers),
