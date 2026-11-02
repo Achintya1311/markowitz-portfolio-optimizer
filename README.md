@@ -721,12 +721,12 @@ The headline above says max-Sharpe loses to 1/N. The README already gives the ca
 
 | Rule (net of costs) | Compounded | Sharpe (rf = 0) | Volatility | Max drawdown (daily path) | Turnover per fold | Sharpe difference vs 1/N (95% interval) |
 |---|---|---|---|---|---|---|
-| Equal weight | +420.4% | 1.13 | 15.0% | -33.7% | 4.9% | n/a |
-| Minimum variance | +254.6% | 0.94 | 13.9% | -25.8% | 21.0% | -0.19 (-0.51 to +0.07) |
-| Inverse volatility | +397.3% | 1.13 | 14.6% | -32.8% | 5.4% | -0.00 (-0.04 to +0.04) |
-| 50/50 blend | +333.1% | 1.07 | 14.1% | -29.6% | 11.9% | -0.06 (-0.19 to +0.06) |
-| Max-Sharpe (previous method) | +255.7% | 0.76 | 18.1% | -31.6% | 53.9% | -0.37 (-0.92 to +0.09) |
-| Nifty 50 price index (no dividends, no costs) | +201.2% | 0.76 | 15.5% | -38.4% | 0.0% | -0.37 (-0.54 to -0.22) |
+| Equal weight | +425.9% | 1.13 | 15.0% | -33.7% | 4.9% | n/a |
+| Minimum variance | +259.3% | 0.95 | 13.8% | -25.8% | 21.0% | -0.19 (-0.51 to +0.07) |
+| Inverse volatility | +401.1% | 1.13 | 14.6% | -32.8% | 5.4% | -0.00 (-0.04 to +0.04) |
+| 50/50 blend | +338.3% | 1.07 | 14.0% | -29.6% | 11.9% | -0.06 (-0.19 to +0.06) |
+| Max-Sharpe (previous method) | +228.2% | 0.71 | 18.2% | -31.6% | 53.9% | -0.37 (-0.92 to +0.09) |
+| Nifty 50 price index (no dividends, no costs) | +203.2% | 0.76 | 15.4% | -38.4% | 0.0% | -0.37 (-0.54 to -0.22) |
 
 **Drawdown basis (P156, 1 Nov 2026).** The Max drawdown column is measured on the daily equity path (same weights, same costs, buy and hold within each 21-day hold). Until 1 Nov 2026 this table and the pre-registered criterion were measured on the 126 fold-end returns only, which cannot see a fall that recovers inside a hold and understated every drawdown by 5 to 11 points (equal weight -24.0%, minimum variance -21.1%, inverse volatility -23.2%, blend -22.0%, max-Sharpe -22.7%, Nifty 50 -27.4%). The fold-end figure is still reported as `max_drawdown_fold_end` in `reports/largecap_latest.json`. Minimum variance is still shallower than 1/N on either basis, so the verdict is unchanged. Volatility is still the standard deviation of the 21-day fold returns.
 
