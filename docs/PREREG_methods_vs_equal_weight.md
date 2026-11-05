@@ -1,5 +1,7 @@
 # Pre-registration: which portfolio rules, if any, beat equal weight (written before any result was computed)
 
+Educational research on historical data. Not investment advice. Not a SEBI-registered research analyst.
+
 **Why.** The repo's headline is that long-only maximum-Sharpe on Ledoit-Wolf covariance loses to 1/N out of sample (+252% net against +427%). The README already says the cause: the sample mean feeding max-Sharpe is statistically indistinguishable from zero, so the optimizer chases noise and trades 58% of the book each fold. That is a finding about one estimator (DeMiguel, Garlappi and Uppal 2009 report the same for many). It is not a finding about portfolio construction, and the repo never walk-forwards the estimators that do not need a mean. This asks whether any of them earn their place against 1/N.
 
 **Fixed in advance, no tuning afterwards:**
