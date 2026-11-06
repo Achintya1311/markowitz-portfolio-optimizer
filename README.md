@@ -717,26 +717,26 @@ quoted above against the real 3-ticker and 29-name fixtures.
 
 The headline above says max-Sharpe loses to 1/N. The README already gives the cause: the sample mean feeding it is indistinguishable from zero, so it chases noise (54% turnover per fold). That is a finding about one estimator. This section asks the construction question properly: do the rules that need no expected-return input earn a place?
 
-**Setup.** 29 large-cap fixtures, 252-day training window, 21-day hold, 126 non-overlapping folds, Ledoit-Wolf covariance. Candidates and pass criteria were committed first (`docs/PREREG_methods_vs_equal_weight.md`, commit `f5a59cf`, 24 Oct 2026 16:33:20 +0530; the code and results followed in `46927f7` at 16:35:54, so the record shows the order, not that no number was computed earlier, P107). Sharpe ratios in this section use no risk-free rate, i.e. net return over volatility (P108): minimum variance (primary), inverse volatility, and a 50/50 blend with 1/N. **Cost fix:** the old benchmark paid no turnover because it reset to 1/N with no price drift, which favoured it. Here every rule, equal weight included, pays 0.2075% per unit of turnover measured from the weights it has drifted to. Equal weight's turnover is 4.9% per fold, not zero.
+**Setup.** 29 large-cap fixtures, 252-day training window, 21-day hold, 127 non-overlapping folds, Ledoit-Wolf covariance. Candidates and pass criteria were committed first (`docs/PREREG_methods_vs_equal_weight.md`, commit `f5a59cf`, 24 Oct 2026 16:33:20 +0530; the code and results followed in `46927f7` at 16:35:54, so the record shows the order, not that no number was computed earlier, P107). Sharpe ratios in this section use no risk-free rate, i.e. net return over volatility (P108): minimum variance (primary), inverse volatility, and a 50/50 blend with 1/N. **Cost fix:** the old benchmark paid no turnover because it reset to 1/N with no price drift, which favoured it. Here every rule, equal weight included, pays 0.2075% per unit of turnover measured from the weights it has drifted to. Equal weight's turnover is 4.9% per fold, not zero.
 
 | Rule (net of costs) | Compounded | Sharpe (rf = 0) | Volatility | Max drawdown (daily path) | Turnover per fold | Sharpe difference vs 1/N (95% interval) |
 |---|---|---|---|---|---|---|
 | Equal weight | +425.9% | 1.13 | 15.0% | -33.7% | 4.9% | n/a |
-| Minimum variance | +259.3% | 0.95 | 13.8% | -25.8% | 21.0% | -0.19 (-0.51 to +0.07) |
-| Inverse volatility | +401.1% | 1.13 | 14.6% | -32.8% | 5.4% | -0.00 (-0.04 to +0.04) |
+| Minimum variance | +259.3% | 0.95 | 13.8% | -25.8% | 21.0% | -0.18 (-0.50 to +0.07) |
+| Inverse volatility | +401.1% | 1.13 | 14.6% | -32.8% | 5.4% | -0.01 (-0.04 to +0.04) |
 | 50/50 blend | +338.3% | 1.07 | 14.0% | -29.6% | 11.9% | -0.06 (-0.19 to +0.06) |
-| Max-Sharpe (previous method) | +228.2% | 0.71 | 18.2% | -31.6% | 53.9% | -0.37 (-0.92 to +0.09) |
-| Nifty 50 price index (no dividends, no costs) | +203.2% | 0.76 | 15.4% | -38.4% | 0.0% | -0.37 (-0.54 to -0.22) |
+| Max-Sharpe (previous method) | +228.2% | 0.71 | 18.2% | -31.6% | 53.9% | -0.42 (-0.96 to +0.02) |
+| Nifty 50 price index (no dividends, no costs) | +203.2% | 0.76 | 15.4% | -38.4% | 0.0% | -0.37 (-0.53 to -0.23) |
 
 **Drawdown basis (P156, 1 Nov 2026).** The Max drawdown column is measured on the daily equity path (same weights, same costs, buy and hold within each 21-day hold). Until 1 Nov 2026 this table and the pre-registered criterion were measured on the 126 fold-end returns only, which cannot see a fall that recovers inside a hold and understated every drawdown by 5 to 11 points (equal weight -24.0%, minimum variance -21.1%, inverse volatility -23.2%, blend -22.0%, max-Sharpe -22.7%, Nifty 50 -27.4%). The fold-end figure is still reported as `max_drawdown_fold_end` in `reports/largecap_latest.json`. Minimum variance is still shallower than 1/N on either basis, so the verdict is unchanged. Volatility is still the standard deviation of the 21-day fold returns.
 
-**Index row (P129, added 27 Oct 2026, after the pre-registration, so not part of the verdict).** The Nifty 50 (`^NSEI`, fetched weekly in Actions into `fixtures/index/NSEI.csv`) held over the same 126 holds, with no costs. Two things favour every stock row over it, so the gap is not a measure of what any rule added: `^NSEI` is a price index with no dividends while the stock fixtures are dividend-adjusted (worth roughly the Nifty dividend yield a year), and the 29 names are today's constituents replayed to 2015 (survivorship, D23). Nine stock-calendar days with no index close carry the previous close.
+**Index row (P129, added 27 Oct 2026, after the pre-registration, so not part of the verdict).** The Nifty 50 (`^NSEI`, fetched weekly in Actions into `fixtures/index/NSEI.csv`) held over the same 127 holds, with no costs. Two things favour every stock row over it, so the gap is not a measure of what any rule added: `^NSEI` is a price index with no dividends while the stock fixtures are dividend-adjusted (worth roughly the Nifty dividend yield a year), and the 29 names are today's constituents replayed to 2015 (survivorship, D23). Nine stock-calendar days with no index close carry the previous close.
 
-**Pre-registered verdict for minimum variance: fail** (Sharpe below 1/N, turnover above the 20% limit, and the 126-day check fails too). Intervals come from a stationary bootstrap over folds; with 126 folds none of the gaps is statistically separable from zero except max-Sharpe at the 126-day window.
+**Pre-registered verdict for minimum variance: fail** (Sharpe below 1/N, turnover above the 20% limit, and the 126-day check fails too). Intervals come from a stationary bootstrap over folds; with 127 folds none of the gaps is statistically separable from zero except max-Sharpe at the 126-day window.
 
 **Reading it.** Equal weight is not beaten on this universe, which matches DeMiguel, Garlappi and Uppal (2009). Minimum variance does what it claims, lower risk, and pays for it in return and turnover. Inverse volatility is the interesting neutral result: it ties 1/N with similar turnover while weighting by risk. It was one of three candidates tried, so it would not have counted as a pass even had it won. No parameter was changed after seeing these numbers.
 
-**What this does not show.** Today's large caps (survivorship, already disclosed) flatter every long-only rule, and 126 folds from about 11 years give wide intervals. The old max-Sharpe tables above are unchanged.
+**What this does not show.** Today's large caps (survivorship, already disclosed) flatter every long-only rule, and 127 folds from about 11 years give wide intervals. The old max-Sharpe tables above are unchanged.
 
 ## Limitations and what would make me wrong
 

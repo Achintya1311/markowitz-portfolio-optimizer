@@ -25,7 +25,12 @@
       "vol_annual": 0.138403,
       "max_drawdown": -0.25845,
       "max_drawdown_fold_end": -0.21079,
-      "avg_turnover": 0.209815
+      "avg_turnover": 0.209815,
+      "sharpe_diff_vs_equal_weight": {
+        "diff": -0.18404,
+        "lo": -0.498922,
+        "hi": 0.069738
+      }
     },
     "inverse_vol": {
       "n_folds": 127,
@@ -34,7 +39,12 @@
       "vol_annual": 0.145725,
       "max_drawdown": -0.328389,
       "max_drawdown_fold_end": -0.232481,
-      "avg_turnover": 0.05426
+      "avg_turnover": 0.05426,
+      "sharpe_diff_vs_equal_weight": {
+        "diff": -0.005275,
+        "lo": -0.040179,
+        "hi": 0.035615
+      }
     },
     "blend_50_50": {
       "n_folds": 127,
@@ -43,7 +53,12 @@
       "vol_annual": 0.140414,
       "max_drawdown": -0.296351,
       "max_drawdown_fold_end": -0.220324,
-      "avg_turnover": 0.118586
+      "avg_turnover": 0.118586,
+      "sharpe_diff_vs_equal_weight": {
+        "diff": -0.059652,
+        "lo": -0.186056,
+        "hi": 0.060975
+      }
     },
     "max_sharpe": {
       "n_folds": 127,
@@ -52,7 +67,12 @@
       "vol_annual": 0.18229,
       "max_drawdown": -0.315986,
       "max_drawdown_fold_end": -0.26188,
-      "avg_turnover": 0.539142
+      "avg_turnover": 0.539142,
+      "sharpe_diff_vs_equal_weight": {
+        "diff": -0.420695,
+        "lo": -0.955388,
+        "hi": 0.023987
+      }
     }
   },
   "verdict_min_variance": {
@@ -71,6 +91,11 @@
     "vol_annual": 0.154173,
     "max_drawdown": -0.384399,
     "max_drawdown_fold_end": -0.273529,
-    "avg_turnover": 0.0
+    "avg_turnover": 0.0,
+    "sharpe_diff_vs_equal_weight": {
+      "diff": -0.368289,
+      "lo": -0.529474,
+      "hi": -0.226815
+    }
   }
 }

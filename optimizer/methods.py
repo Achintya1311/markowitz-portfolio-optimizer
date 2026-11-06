@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -215,6 +216,13 @@ def build_report(tickers: list[str], fixtures_dir: str, dates, w252: dict, verdi
     }
     if "index" in w252:
         report["index_252"] = {k: (w252["index"][k] if k == "n_folds" else r6(w252["index"][k])) for k in keep}
+    # D60: the README's interval column comes from the report too, so the weekly refresh keeps it current
+    ci = lambda d: {"diff": r6(d["diff"]), "lo": r6(d["lo"]), "hi": r6(d["hi"])}  # noqa: E731
+    for n, m in w252["methods"].items():
+        if "sharpe_diff_vs_equal_weight" in m:
+            report["methods_252"][n]["sharpe_diff_vs_equal_weight"] = ci(m["sharpe_diff_vs_equal_weight"])
+    if "index" in w252 and "sharpe_diff_vs_equal_weight" in w252["index"]:
+        report["index_252"]["sharpe_diff_vs_equal_weight"] = ci(w252["index"]["sharpe_diff_vs_equal_weight"])
     return report
 
 
@@ -230,9 +238,11 @@ README_TABLE_ROWS = {
 
 def update_readme_table(text: str, report: dict) -> str:
     """D58: rewrite the README's pre-registered table from the report, so the
-    weekly refresh keeps the two in step. Only the five report columns change;
-    the Sharpe-difference interval column (not in the report) is kept."""
+    weekly refresh keeps the two in step. D60: the Sharpe-difference interval
+    column is rewritten too when the report carries it (older reports did not),
+    and the methods section's fold count follows the report's 252-day folds."""
     methods = report["methods_252"]
+    text = _update_section_fold_count(text, methods["equal_weight"].get("n_folds"))
     lines = text.split("\n")
     for i, line in enumerate(lines):
         cells = line.split("|")
@@ -249,8 +259,25 @@ def update_readme_table(text: str, report: dict) -> str:
                   f"{m['max_drawdown']:.1%}", f"{m['avg_turnover']:.1%}")
         for j, v in enumerate(values, start=2):
             cells[j] = f" {v} "
+        d = m.get("sharpe_diff_vs_equal_weight")
+        if d:
+            cells[7] = f" {d['diff']:+.2f} ({d['lo']:+.2f} to {d['hi']:+.2f}) "
         lines[i] = "|".join(cells)
     return "\n".join(lines)
+
+
+METHODS_SECTION = "## Which rule, if any, beats equal weight?"
+
+
+def _update_section_fold_count(text: str, n_folds) -> str:
+    """D60: inside the pre-registered methods section only, every "<n> folds",
+    "<n> non-overlapping folds" or "<n> holds" is the 252-day fold count."""
+    if not n_folds or METHODS_SECTION not in text:
+        return text
+    head, rest = text.split(METHODS_SECTION, 1)
+    body, sep, tail = rest.partition("\n## ")
+    body = re.sub(r"\b\d{3}( non-overlapping folds| folds| holds)\b", lambda mm: f"{n_folds}{mm.group(1)}", body)
+    return head + METHODS_SECTION + body + sep + tail
 
 
 def main(argv=None) -> int:

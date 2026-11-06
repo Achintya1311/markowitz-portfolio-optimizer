@@ -36,14 +36,14 @@ def test_methods_table_row_matches_the_committed_report(label):
     assert cells[5] == f"{m['avg_turnover']:.1%}"
 
 
-def test_update_readme_table_rewrites_drifted_cells_and_keeps_the_interval_column():
+def test_update_readme_table_rewrites_drifted_cells():
     from optimizer.methods import update_readme_table
 
     text = (ROOT / "README.md").read_text()
-    stale = text.replace("| Minimum variance | +254.5% |", "| Minimum variance | +999.9% |")
+    stale = text.replace(f"| Minimum variance | {REPORT['min_variance']['compounded_net']:+.1%} |", "| Minimum variance | +999.9% |")
+    assert stale != text
     fixed = update_readme_table(stale, {"methods_252": REPORT})
     assert fixed == text
-    assert "-0.19 (-0.51 to +0.07)" in fixed
 
 
 def test_update_readme_table_is_a_no_op_when_the_table_matches():
@@ -57,3 +57,49 @@ def test_refresh_workflow_updates_and_commits_the_readme():
     wf = (ROOT / ".github" / "workflows" / "fetch-largecaps.yml").read_text()
     assert "--update-readme README.md" in wf
     assert "git add fixtures/ohlcv_largecap fixtures/index reports/largecap_latest.json README.md" in wf
+
+
+# D60: the interval column and the section's fold count come from the report too.
+def _report_with(diff_lo_hi, n_folds):
+    import copy
+
+    rep = copy.deepcopy(json.loads((ROOT / "reports" / "largecap_latest.json").read_text()))
+    for m in rep["methods_252"].values():
+        m["n_folds"] = n_folds
+    d, lo, hi = diff_lo_hi
+    rep["methods_252"]["max_sharpe"]["sharpe_diff_vs_equal_weight"] = {"diff": d, "lo": lo, "hi": hi}
+    return rep
+
+
+def test_update_readme_table_rewrites_a_stale_interval_from_the_report():
+    from optimizer.methods import update_readme_table
+
+    text = (ROOT / "README.md").read_text()
+    fixed = update_readme_table(text, _report_with((-0.123, -0.456, 0.789), 127))
+    row = next(line for line in fixed.splitlines() if line.startswith("| Max-Sharpe (previous method) |"))
+    assert row.rstrip().endswith("| -0.12 (-0.46 to +0.79) |")
+
+
+def test_update_readme_table_rewrites_the_methods_section_fold_count():
+    from optimizer.methods import update_readme_table
+
+    text = (ROOT / "README.md").read_text()
+    fixed = update_readme_table(text, _report_with((-0.42, -0.96, 0.02), 131))
+    section = fixed.split("## Which rule, if any, beats equal weight?")[1].split("\n## ")[0]
+    assert "21-day hold, 131 non-overlapping folds" in section
+    assert "with 131 folds none of the gaps" in section
+    assert "126 folds" not in section and "126 holds" not in section
+    # outside the section (the dated 24 Oct and Day 9 lines) nothing changes
+    assert fixed.split("## Which rule, if any, beats equal weight?")[0] == text.split("## Which rule, if any, beats equal weight?")[0]
+
+
+def test_committed_report_stores_every_rule_interval_and_the_readme_quotes_it():
+    rep = json.loads((ROOT / "reports" / "largecap_latest.json").read_text())
+    cells = _table()
+    for label, key in ROWS.items():
+        if key == "equal_weight":
+            continue
+        d = rep["methods_252"][key]["sharpe_diff_vs_equal_weight"]
+        assert cells[label][6] == f"{d['diff']:+.2f} ({d['lo']:+.2f} to {d['hi']:+.2f})"
+    section = (ROOT / "README.md").read_text().split("## Which rule, if any, beats equal weight?")[1].split("\n## ")[0]
+    assert f"21-day hold, {rep['methods_252']['equal_weight']['n_folds']} non-overlapping folds" in section
