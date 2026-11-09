@@ -722,7 +722,7 @@ The headline above says max-Sharpe loses to 1/N. The README already gives the ca
 | Rule (net of costs) | Compounded | Sharpe (rf = 0) | Volatility | Max drawdown (daily path) | Turnover per fold | Sharpe difference vs 1/N (95% interval) |
 |---|---|---|---|---|---|---|
 | Equal weight | +425.9% | 1.13 | 15.0% | -33.7% | 4.9% | n/a |
-| Minimum variance | +259.3% | 0.95 | 13.8% | -25.8% | 21.0% | -0.18 (-0.50 to +0.07) |
+| Minimum variance | +259.2% | 0.95 | 13.8% | -25.8% | 21.0% | -0.18 (-0.50 to +0.07) |
 | Inverse volatility | +401.1% | 1.13 | 14.6% | -32.8% | 5.4% | -0.01 (-0.04 to +0.04) |
 | 50/50 blend | +338.3% | 1.07 | 14.0% | -29.6% | 11.9% | -0.06 (-0.19 to +0.06) |
 | Max-Sharpe (previous method) | +228.2% | 0.71 | 18.2% | -31.6% | 53.9% | -0.42 (-0.96 to +0.02) |

@@ -1,12 +1,12 @@
 {
-  "fixture_last_date": "2026-10-30",
+  "fixture_last_date": "2026-11-09",
   "n_assets": 29,
   "walk_forward_252": {
     "n_folds": 127,
-    "optimizer_before_costs": 2.779027,
-    "optimizer_after_costs": 2.250183,
-    "equal_weight_before_costs": 4.326438,
-    "t_stat_excess_after_costs": -1.056587
+    "optimizer_before_costs": 2.779034,
+    "optimizer_after_costs": 2.250189,
+    "equal_weight_before_costs": 4.326437,
+    "t_stat_excess_after_costs": -1.056583
   },
   "methods_252": {
     "equal_weight": {
@@ -20,25 +20,25 @@
     },
     "min_variance": {
       "n_folds": 127,
-      "compounded_net": 2.593183,
-      "sharpe_net": 0.948103,
+      "compounded_net": 2.592345,
+      "sharpe_net": 0.947942,
       "vol_annual": 0.138403,
-      "max_drawdown": -0.25845,
-      "max_drawdown_fold_end": -0.21079,
-      "avg_turnover": 0.209815,
+      "max_drawdown": -0.258449,
+      "max_drawdown_fold_end": -0.210894,
+      "avg_turnover": 0.209833,
       "sharpe_diff_vs_equal_weight": {
-        "diff": -0.18404,
-        "lo": -0.498922,
-        "hi": 0.069738
+        "diff": -0.184202,
+        "lo": -0.498952,
+        "hi": 0.069732
       }
     },
     "inverse_vol": {
       "n_folds": 127,
-      "compounded_net": 4.011083,
+      "compounded_net": 4.011082,
       "sharpe_net": 1.126869,
       "vol_annual": 0.145725,
       "max_drawdown": -0.328389,
-      "max_drawdown_fold_end": -0.232481,
+      "max_drawdown_fold_end": -0.232482,
       "avg_turnover": 0.05426,
       "sharpe_diff_vs_equal_weight": {
         "diff": -0.005275,
@@ -48,29 +48,29 @@
     },
     "blend_50_50": {
       "n_folds": 127,
-      "compounded_net": 3.38311,
-      "sharpe_net": 1.072492,
+      "compounded_net": 3.382596,
+      "sharpe_net": 1.07241,
       "vol_annual": 0.140414,
       "max_drawdown": -0.296351,
       "max_drawdown_fold_end": -0.220324,
-      "avg_turnover": 0.118586,
+      "avg_turnover": 0.118597,
       "sharpe_diff_vs_equal_weight": {
-        "diff": -0.059652,
-        "lo": -0.186056,
-        "hi": 0.060975
+        "diff": -0.059733,
+        "lo": -0.186166,
+        "hi": 0.060907
       }
     },
     "max_sharpe": {
       "n_folds": 127,
-      "compounded_net": 2.282132,
+      "compounded_net": 2.282139,
       "sharpe_net": 0.711449,
       "vol_annual": 0.18229,
       "max_drawdown": -0.315986,
-      "max_drawdown_fold_end": -0.26188,
+      "max_drawdown_fold_end": -0.261879,
       "avg_turnover": 0.539142,
       "sharpe_diff_vs_equal_weight": {
-        "diff": -0.420695,
-        "lo": -0.955388,
+        "diff": -0.420694,
+        "lo": -0.955387,
         "hi": 0.023987
       }
     }
