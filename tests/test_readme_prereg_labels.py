@@ -11,6 +11,6 @@ def test_preregistration_sentence_matches_the_git_record():
 
 
 def test_preregistered_sharpe_is_labelled_rf_zero():
-    assert "| Rule (net of costs) | Compounded | Sharpe (rf = 0) |" in README
+    assert "| Rule (net of costs, before tax) | Compounded | Sharpe (rf = 0) |" in README
     lead = next(line for line in README.splitlines() if line.startswith("**Update (24 Oct 2026"))
-    assert "Sharpe at rf = 0 (0.94 vs 1.13)" in lead
+    assert "Sharpe at rf = 0 (" in lead  # the figures follow the report (D63, tests/test_readme_headline.py)

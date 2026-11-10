@@ -89,8 +89,12 @@ def test_update_readme_table_rewrites_the_methods_section_fold_count():
     assert "21-day hold, 131 non-overlapping folds" in section
     assert "with 131 folds none of the gaps" in section
     assert "126 folds" not in section and "126 holds" not in section
-    # outside the section (the dated 24 Oct and Day 9 lines) nothing changes
-    assert fixed.split("## Which rule, if any, beats equal weight?")[0] == text.split("## Which rule, if any, beats equal weight?")[0]
+    # outside the section only the headline lines follow the report (D63); the dated 26 Oct figures stay
+    def outside(t):
+        head = t.split("## Which rule, if any, beats equal weight?")[0]
+        return [l for l in head.splitlines() if not l.startswith(("**Finding", "**Update", "**Data refresh"))]
+    assert outside(fixed) == outside(text)
+    assert "On the fixtures to 26 Oct 2026 (126 folds)" in fixed
 
 
 def test_committed_report_stores_every_rule_interval_and_the_readme_quotes_it():

@@ -243,6 +243,7 @@ def update_readme_table(text: str, report: dict) -> str:
     and the methods section's fold count follows the report's 252-day folds."""
     methods = report["methods_252"]
     text = _update_section_fold_count(text, methods["equal_weight"].get("n_folds"))
+    text = _update_headline(text, report)
     lines = text.split("\n")
     for i, line in enumerate(lines):
         cells = line.split("|")
@@ -267,6 +268,68 @@ def update_readme_table(text: str, report: dict) -> str:
 
 
 METHODS_SECTION = "## Which rule, if any, beats equal weight?"
+
+_NUM = r"[+-]?\d+(?:\.\d+)?"
+_HEAD_PREFIXES = ("**Finding", "**Update", "**Data refresh")
+
+
+def _day(iso: str) -> str:
+    return f"{int(iso[8:10])} {_MONTHS[int(iso[5:7]) - 1]} {iso[:4]}"
+
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _headline_rules(report: dict) -> list[tuple[str, str]]:
+    """D63: (pattern, replacement) for every report figure the README's
+    Finding/Update/Data-refresh lines quote. Rules whose report keys are
+    missing (older reports) are skipped."""
+    rules = []
+    wf, m, last = report.get("walk_forward_252"), report.get("methods_252", {}), report.get("fixture_last_date")
+    if wf and last:
+        rules.append((rf"fixtures to \d{{1,2}} \w{{3}} \d{{4}}, \d+ folds; Day 9",
+                      f"fixtures to {_day(last)}, {wf['n_folds']} folds; Day 9"))
+    if last and "equal_weight" in m:
+        rules.append((r"fixtures ending \d{1,2} \w{3} \d{4} \(\d+ folds\)",
+                      f"fixtures ending {_day(last)} ({m['equal_weight']['n_folds']} folds)"))
+    if wf:
+        rules.append((rf"{_NUM}% vs {_NUM}% compounded before costs, and {_NUM}% for max-Sharpe after costs",
+                      f"{wf['equal_weight_before_costs']:+.1%} vs {wf['optimizer_before_costs']:+.1%} compounded "
+                      f"before costs, and {wf['optimizer_after_costs']:+.1%} for max-Sharpe after costs"))
+        rules.append((rf"t = {_NUM} on the per-fold excess return after costs",
+                      f"t = {wf['t_stat_excess_after_costs']:.2f} on the per-fold excess return after costs"))
+    if {"equal_weight", "min_variance", "inverse_vol"} <= set(m):
+        ew, mv, iv = m["equal_weight"], m["min_variance"], m["inverse_vol"]
+        rules.append((r"on the same \d+ folds\)", f"on the same {ew['n_folds']} folds)"))
+        rules.append((rf"volatility \({_NUM}% vs {_NUM}%\) and daily-path drawdown \({_NUM}% vs {_NUM}%\)",
+                      f"volatility ({mv['vol_annual']:.1%} vs {ew['vol_annual']:.1%}) and daily-path drawdown "
+                      f"({mv['max_drawdown']:.1%} vs {ew['max_drawdown']:.1%})"))
+        rules.append((rf"Sharpe at rf = 0 \({_NUM} vs {_NUM}\) and turns over {_NUM}% per fold",
+                      f"Sharpe at rf = 0 ({mv['sharpe_net']:.2f} vs {ew['sharpe_net']:.2f}) and turns over "
+                      f"{mv['avg_turnover']:.1%} per fold"))
+        d = iv.get("sharpe_diff_vs_equal_weight")
+        if d:
+            rules.append((rf"\(Sharpe difference {_NUM}, 95% interval {_NUM} to {_NUM}\)",
+                          f"(Sharpe difference {d['diff']:+.2f}, 95% interval {d['lo']:+.2f} to {d['hi']:+.2f})"))
+    return rules
+
+
+def headline_figures(report: dict) -> list[str]:
+    """The phrases the README headline must contain for this report (D63)."""
+    return [repl for _, repl in _headline_rules(report)]
+
+
+def _update_headline(text: str, report: dict) -> str:
+    """D63: rewrite the report figures in the README's Finding, Update and
+    Data-refresh lines, so the weekly refresh keeps them in step with the table."""
+    rules = _headline_rules(report)
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if line.startswith(_HEAD_PREFIXES):
+            for pat, repl in rules:
+                line = re.sub(pat, lambda _m, r=repl: r, line)
+            lines[i] = line
+    return "\n".join(lines)
 
 
 def _update_section_fold_count(text: str, n_folds) -> str:
