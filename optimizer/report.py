@@ -49,12 +49,16 @@ def plot_frontier(
     cml_vols: np.ndarray,
     cml_returns: np.ndarray,
     out_path: str | Path,
+    window: tuple[str, str] | None = None,
 ) -> None:
     """Write the mean-vol frontier, tangency point, CML and asset points to ``out_path``.
 
     Matplotlib with the ``Agg`` backend, same as every other chart in this
     portfolio (see e.g. ``mcsim.commodity.plot_curve_regime``) - no display
     is available or needed, only a file in ``outputs/``.
+
+    The PNG gets shared on its own, so it carries the rule 1 line and, when
+    ``window`` (first, last return date) is given, the data window (S34).
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -78,9 +82,13 @@ def plot_frontier(
 
     ax.set_xlabel("annualized volatility")
     ax.set_ylabel("annualized return")
-    ax.set_title("Efficient frontier — long-only, sample covariance")
+    title = "Efficient frontier — long-only, sample covariance"
+    if window is not None:
+        title += f"\nhistorical daily returns, {window[0]} to {window[1]}"
+    ax.set_title(title)
     ax.legend(loc="best", fontsize=8)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    fig.text(0.5, 0.01, DISCLAIMER, ha="center", fontsize=7)
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
 
@@ -91,7 +99,7 @@ def run(
     fixtures_dir: str,
     n_points: int = DEFAULT_N_POINTS,
 ) -> dict:
-    _, returns_matrix = load_returns_matrix(tickers, fixtures_dir)
+    dates, returns_matrix = load_returns_matrix(tickers, fixtures_dir)
     mu_daily, cov_daily = sample_mean_cov(returns_matrix)
     mu = annualize_mean(mu_daily)
     cov = annualize_cov(cov_daily)
@@ -105,6 +113,7 @@ def run(
 
     return {
         "tickers": tickers,
+        "window": (dates[0], dates[-1]),
         "mu_annual": mu,
         "cov_annual": cov,
         "risk_free": risk_free,
@@ -208,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         plot_frontier(
             tickers, result["mu_annual"], result["cov_annual"], result["frontier"],
             result["tangency"], result["cml_vols"], result["cml_returns"], chart_path,
+            window=result["window"],
         )
 
     print(_format_report(result, chart_path))
