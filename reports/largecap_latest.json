@@ -1,12 +1,12 @@
 {
-  "fixture_last_date": "2026-11-09",
+  "fixture_last_date": "2026-11-20",
   "n_assets": 29,
   "walk_forward_252": {
     "n_folds": 127,
-    "optimizer_before_costs": 2.779034,
-    "optimizer_after_costs": 2.250189,
+    "optimizer_before_costs": 2.779023,
+    "optimizer_after_costs": 2.25018,
     "equal_weight_before_costs": 4.326437,
-    "t_stat_excess_after_costs": -1.056583
+    "t_stat_excess_after_costs": -1.056589
   },
   "methods_252": {
     "equal_weight": {
@@ -20,16 +20,16 @@
     },
     "min_variance": {
       "n_folds": 127,
-      "compounded_net": 2.592345,
-      "sharpe_net": 0.947942,
-      "vol_annual": 0.138403,
+      "compounded_net": 2.593522,
+      "sharpe_net": 0.948159,
+      "vol_annual": 0.138404,
       "max_drawdown": -0.258449,
-      "max_drawdown_fold_end": -0.210894,
-      "avg_turnover": 0.209833,
+      "max_drawdown_fold_end": -0.210868,
+      "avg_turnover": 0.209903,
       "sharpe_diff_vs_equal_weight": {
-        "diff": -0.184202,
-        "lo": -0.498952,
-        "hi": 0.069732
+        "diff": -0.183984,
+        "lo": -0.498363,
+        "hi": 0.069776
       }
     },
     "inverse_vol": {
@@ -48,30 +48,30 @@
     },
     "blend_50_50": {
       "n_folds": 127,
-      "compounded_net": 3.382596,
-      "sharpe_net": 1.07241,
-      "vol_annual": 0.140414,
-      "max_drawdown": -0.296351,
-      "max_drawdown_fold_end": -0.220324,
-      "avg_turnover": 0.118597,
+      "compounded_net": 3.383319,
+      "sharpe_net": 1.072517,
+      "vol_annual": 0.140415,
+      "max_drawdown": -0.29635,
+      "max_drawdown_fold_end": -0.220323,
+      "avg_turnover": 0.118627,
       "sharpe_diff_vs_equal_weight": {
-        "diff": -0.059733,
-        "lo": -0.186166,
-        "hi": 0.060907
+        "diff": -0.059626,
+        "lo": -0.186096,
+        "hi": 0.060973
       }
     },
     "max_sharpe": {
       "n_folds": 127,
-      "compounded_net": 2.282139,
-      "sharpe_net": 0.711449,
+      "compounded_net": 2.282129,
+      "sharpe_net": 0.711448,
       "vol_annual": 0.18229,
       "max_drawdown": -0.315986,
-      "max_drawdown_fold_end": -0.261879,
+      "max_drawdown_fold_end": -0.26188,
       "avg_turnover": 0.539142,
       "sharpe_diff_vs_equal_weight": {
-        "diff": -0.420694,
-        "lo": -0.955387,
-        "hi": 0.023987
+        "diff": -0.420695,
+        "lo": -0.955388,
+        "hi": 0.023986
       }
     }
   },
@@ -94,7 +94,7 @@
     "avg_turnover": 0.0,
     "sharpe_diff_vs_equal_weight": {
       "diff": -0.368289,
-      "lo": -0.529474,
+      "lo": -0.529473,
       "hi": -0.226815
     }
   }
