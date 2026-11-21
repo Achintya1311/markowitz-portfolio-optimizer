@@ -64,3 +64,13 @@ def test_cli_skips_the_leg_with_a_message_when_the_fixture_is_missing(tmp_path, 
 def test_report_carries_index_252():
     r = json.loads((ROOT / "reports" / "largecap_latest.json").read_text())
     assert r["index_252"]["n_folds"] == r["methods_252"]["equal_weight"]["n_folds"]
+
+
+def test_sharpe_diff_ci_handles_fewer_folds_than_arch_can_size_a_block_for():
+    # arch 9 raises on block-length estimation below 11 rows (16 Nov fixture run);
+    # short series fall back to block 1 instead of failing the whole report.
+    rng = np.random.default_rng(1)
+    a, b = rng.normal(0.01, 0.02, 9), rng.normal(0.008, 0.02, 9)
+    ci = methods.sharpe_diff_ci(a, b, reps=200)
+    assert ci["block"] == 1
+    assert ci["lo"] <= ci["diff"] <= ci["hi"]

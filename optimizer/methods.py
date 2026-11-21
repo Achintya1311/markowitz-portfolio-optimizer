@@ -149,12 +149,21 @@ def summarize(net: np.ndarray, turnover: np.ndarray, daily_equity: np.ndarray | 
             "max_drawdown_fold_end": fold_end_dd, "avg_turnover": float(turnover.mean()), "n_folds": int(len(net))}
 
 
+MIN_ROWS_FOR_BLOCK_ESTIMATE = 11
+
+
 def sharpe_diff_ci(a: np.ndarray, b: np.ndarray, reps: int = 5000, seed: int = 0) -> dict:
     """95% interval for Sharpe(a) - Sharpe(b) from a stationary bootstrap over paired fold returns."""
     from arch.bootstrap import StationaryBootstrap, optimal_block_length
 
     x = np.column_stack([a, b])
-    blk = int(min(max(round(float(optimal_block_length(x)["stationary"].mean())), 1), 10))
+    # arch 9 refuses to estimate a block length from fewer than 11 rows; with
+    # that few folds there is no dependence to measure, so resample folds one
+    # at a time (block 1). Longer series keep the estimated, capped block.
+    if len(x) < MIN_ROWS_FOR_BLOCK_ESTIMATE:
+        blk = 1
+    else:
+        blk = int(min(max(round(float(optimal_block_length(x)["stationary"].mean())), 1), 10))
     ann = float(np.sqrt(FOLDS_PER_YEAR))
     sh = lambda m: m[:, 0].mean() / m[:, 0].std(ddof=1) * ann - m[:, 1].mean() / m[:, 1].std(ddof=1) * ann
     point = sh(x)
