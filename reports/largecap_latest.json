@@ -3,10 +3,10 @@
   "n_assets": 29,
   "walk_forward_252": {
     "n_folds": 127,
-    "optimizer_before_costs": 2.779023,
-    "optimizer_after_costs": 2.25018,
+    "optimizer_before_costs": 2.779029,
+    "optimizer_after_costs": 2.250184,
     "equal_weight_before_costs": 4.326437,
-    "t_stat_excess_after_costs": -1.056589
+    "t_stat_excess_after_costs": -1.056586
   },
   "methods_252": {
     "equal_weight": {
@@ -20,16 +20,16 @@
     },
     "min_variance": {
       "n_folds": 127,
-      "compounded_net": 2.593522,
-      "sharpe_net": 0.948159,
-      "vol_annual": 0.138404,
+      "compounded_net": 2.592413,
+      "sharpe_net": 0.947955,
+      "vol_annual": 0.138403,
       "max_drawdown": -0.258449,
-      "max_drawdown_fold_end": -0.210868,
-      "avg_turnover": 0.209903,
+      "max_drawdown_fold_end": -0.211003,
+      "avg_turnover": 0.20983,
       "sharpe_diff_vs_equal_weight": {
-        "diff": -0.183984,
-        "lo": -0.498363,
-        "hi": 0.069776
+        "diff": -0.184188,
+        "lo": -0.498892,
+        "hi": 0.069714
       }
     },
     "inverse_vol": {
@@ -48,30 +48,30 @@
     },
     "blend_50_50": {
       "n_folds": 127,
-      "compounded_net": 3.383319,
-      "sharpe_net": 1.072517,
-      "vol_annual": 0.140415,
-      "max_drawdown": -0.29635,
+      "compounded_net": 3.382638,
+      "sharpe_net": 1.072417,
+      "vol_annual": 0.140414,
+      "max_drawdown": -0.296351,
       "max_drawdown_fold_end": -0.220323,
-      "avg_turnover": 0.118627,
+      "avg_turnover": 0.118596,
       "sharpe_diff_vs_equal_weight": {
-        "diff": -0.059626,
-        "lo": -0.186096,
-        "hi": 0.060973
+        "diff": -0.059726,
+        "lo": -0.186235,
+        "hi": 0.060949
       }
     },
     "max_sharpe": {
       "n_folds": 127,
-      "compounded_net": 2.282129,
-      "sharpe_net": 0.711448,
+      "compounded_net": 2.282134,
+      "sharpe_net": 0.711449,
       "vol_annual": 0.18229,
       "max_drawdown": -0.315986,
-      "max_drawdown_fold_end": -0.26188,
+      "max_drawdown_fold_end": -0.261879,
       "avg_turnover": 0.539142,
       "sharpe_diff_vs_equal_weight": {
         "diff": -0.420695,
-        "lo": -0.955388,
-        "hi": 0.023986
+        "lo": -0.955387,
+        "hi": 0.023987
       }
     }
   },
